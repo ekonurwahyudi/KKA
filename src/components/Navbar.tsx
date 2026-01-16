@@ -1,8 +1,9 @@
 'use client'
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
-import { Button } from '@/components/ui/button'
+import { useState, useEffect } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,12 +11,50 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LayoutDashboard, Wallet, FileText, BarChart3, LogOut, Database, ChevronDown, Building2, FileCode, Bell, Settings, FolderOpen, Users } from 'lucide-react'
+import { LayoutDashboard, Wallet, BarChart3, LogOut, Database, ChevronDown, Building2, FileCode, Settings, FolderOpen, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+// Weather icon component using custom images
+function WeatherIcon({ code, className }: { code: number; className?: string }) {
+  // WMO Weather codes: https://open-meteo.com/en/docs
+  let iconSrc = '/sun.png'
+  if (code >= 1 && code <= 3) iconSrc = '/cloud.png'
+  if (code >= 45 && code <= 48) iconSrc = '/cloud.png'
+  if (code >= 51 && code <= 99) iconSrc = '/rain.png'
+  
+  return <Image src={iconSrc} alt="Weather" width={24} height={24} className={className} />
+}
 
 export default function Navbar() {
   const { data: session } = useSession()
   const pathname = usePathname()
+  const [weather, setWeather] = useState<{ temp: number; code: number } | null>(null)
+  const [currentDate, setCurrentDate] = useState('')
+
+  useEffect(() => {
+    // Set current date
+    const now = new Date()
+    const options: Intl.DateTimeFormatOptions = { 
+      weekday: 'long', 
+      day: 'numeric', 
+      month: 'long', 
+      year: 'numeric' 
+    }
+    setCurrentDate(now.toLocaleDateString('id-ID', options))
+
+    // Fetch Jakarta weather from Open-Meteo (free, no API key needed)
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=-6.2088&longitude=106.8456&current=temperature_2m,weather_code')
+      .then(res => res.json())
+      .then(data => {
+        if (data.current) {
+          setWeather({
+            temp: Math.round(data.current.temperature_2m),
+            code: data.current.weather_code
+          })
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -25,31 +64,47 @@ export default function Navbar() {
   ]
 
   return (
-    <nav className="bg-white border-b shadow-sm">
-      <div className="px-[120px]">
-        {/* Top Header */}
-        <div className="flex justify-between items-center h-14 border-b">
-          <Link href="/dashboard" className="text-xl font-bold flex items-center gap-2 text-green-600">
-            <div className="grid grid-cols-2 gap-0.5">
-              <div className="w-2 h-2 bg-green-600 rounded-sm"></div>
-              <div className="w-2 h-2 bg-green-600 rounded-sm"></div>
-              <div className="w-2 h-2 bg-green-600 rounded-sm"></div>
-              <div className="w-2 h-2 bg-green-600 rounded-sm"></div>
-            </div>
-            KKA
-          </Link>
+    <nav className="bg-white">
+      {/* Top Header - Full width border */}
+      <div className="border-b">
+        <div className="px-[120px] flex justify-between items-center h-14">
+          <div className="flex items-center gap-6">
+            <Link href="/dashboard" className="flex items-center">
+              <Image 
+                src="/logo.png" 
+                alt="Logo" 
+                width={120} 
+                height={40} 
+                priority
+                className="h-9 w-auto"
+              />
+            </Link>
+          </div>
+          
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" className="text-muted-foreground">
-              <Bell className="h-5 w-5" />
-            </Button>
+            {/* Weather & Date */}
+            <div className="flex items-center gap-3 px-3 py-1.5 bg-gray-50 rounded-lg">
+              {weather && (
+                <div className="flex items-center gap-2">
+                  <WeatherIcon code={weather.code} className="h-6 w-6" />
+                  <span className="text-sm font-medium">{weather.temp}°C</span>
+                </div>
+              )}
+              <div className="h-4 w-px bg-gray-300" />
+              <span className="text-sm text-muted-foreground">{currentDate}</span>
+            </div>
             
             {/* User Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors">
-                  <div className="w-9 h-9 rounded-xl bg-green-100 flex items-center justify-center text-green-600 font-semibold text-sm">
-                    {session?.user?.name?.charAt(0).toUpperCase() || 'U'}
-                  </div>
+                  <Image 
+                    src="/avatar.png" 
+                    alt="Avatar" 
+                    width={36} 
+                    height={36} 
+                    className="rounded-lg"
+                  />
                   <div className="text-left">
                     <p className="font-medium text-sm">{session?.user?.name}</p>
                     <p className="text-xs text-muted-foreground">{session?.user?.email}</p>
@@ -71,65 +126,66 @@ export default function Navbar() {
             </DropdownMenu>
           </div>
         </div>
-        
-        {/* Navigation Tabs - Style seperti gambar */}
-        <div className="flex items-center gap-1 py-3">
-          <div className="flex items-center gap-1 bg-gray-100 rounded-full p-1">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
+      </div>
+      
+      {/* Navigation Tabs - Full width border */}
+      <div className="border-b">
+        <div className="px-[120px] py-2">
+          <div className="flex items-center gap-1 bg-gray-100 rounded-full p-1 w-fit">
+            {navItems.map((item) => {
+              const isActive = pathname === item.href
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-all",
+                    isActive 
+                      ? "bg-white text-gray-900 shadow-sm" 
+                      : "text-gray-500 hover:text-gray-700"
+                  )}
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+              )
+            })}
+            
+            {/* Master Data Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={cn(
                   "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-all",
-                  isActive 
-                    ? "bg-white text-gray-900 shadow-sm" 
+                  pathname.startsWith('/dashboard/master')
+                    ? "bg-white text-gray-900 shadow-sm"
                     : "text-gray-500 hover:text-gray-700"
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            )
-          })}
-          
-          {/* Master Data Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className={cn(
-                "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-all",
-                pathname.startsWith('/dashboard/master')
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              )}>
-                <Database className="h-4 w-4" />
-                Master Data
-                <ChevronDown className="h-3 w-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
-              <DropdownMenuItem asChild>
-                <Link href="/dashboard/master/gl-account" className="flex items-center gap-2 cursor-pointer">
-                  <FileCode className="h-4 w-4" />
-                  GL Account
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/dashboard/master/regional" className="flex items-center gap-2 cursor-pointer">
-                  <Building2 className="h-4 w-4" />
-                  Regional
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/dashboard/master/vendor" className="flex items-center gap-2 cursor-pointer">
-                  <Users className="h-4 w-4" />
-                  Vendor
-                </Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
+                )}>
+                  <Database className="h-4 w-4" />
+                  Master Data
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/master/gl-account" className="flex items-center gap-2 cursor-pointer">
+                    <FileCode className="h-4 w-4" />
+                    GL Account
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/master/regional" className="flex items-center gap-2 cursor-pointer">
+                    <Building2 className="h-4 w-4" />
+                    Regional
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/master/vendor" className="flex items-center gap-2 cursor-pointer">
+                    <Users className="h-4 w-4" />
+                    Vendor
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

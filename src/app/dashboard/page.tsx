@@ -146,10 +146,20 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((q) => {
           const data = getQuarterData(q)
+          const penyerapan = data.budget > 0 ? (data.used / data.budget) * 100 : 0
           return (
             <Card key={q} className="border">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Kuartal {q}</CardTitle>
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-sm font-medium">Kuartal {q}</CardTitle>
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                    penyerapan >= 80 ? 'bg-green-100 text-green-600' : 
+                    penyerapan >= 40 ? 'bg-yellow-100 text-yellow-600' : 
+                    'bg-red-100 text-red-600'
+                  }`}>
+                    {penyerapan.toFixed(1)}%
+                  </span>
+                </div>
               </CardHeader>
               <CardContent className="space-y-1">
                 <div className="flex justify-between text-sm">
@@ -195,11 +205,13 @@ export default function DashboardPage() {
                       <TableHead className="text-right">Anggaran Q{q} (Rp)</TableHead>
                       <TableHead className="text-right">Terpakai (Rp)</TableHead>
                       <TableHead className="text-right">Sisa (Rp)</TableHead>
+                      <TableHead className="text-center">Outlook</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {budgets.map((budget) => {
                       const data = getBudgetByQuarter(budget, q)
+                      const outlook = data.budget > 0 ? (data.used / data.budget) * 100 : 0
                       return (
                         <TableRow key={budget.id}>
                           <TableCell className="font-medium">{budget.glAccount.code}</TableCell>
@@ -209,12 +221,21 @@ export default function DashboardPage() {
                           <TableCell className={`text-right font-semibold ${data.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             {data.remaining.toLocaleString('id-ID')}
                           </TableCell>
+                          <TableCell className="text-center">
+                            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                              outlook >= 80 ? 'bg-green-100 text-green-600' : 
+                              outlook >= 40 ? 'bg-yellow-100 text-yellow-600' : 
+                              'bg-red-100 text-red-600'
+                            }`}>
+                              {outlook.toFixed(1)}%
+                            </span>
+                          </TableCell>
                         </TableRow>
                       )
                     })}
                     {budgets.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                           Belum ada data anggaran. Silakan input anggaran terlebih dahulu.
                         </TableCell>
                       </TableRow>

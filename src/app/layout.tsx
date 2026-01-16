@@ -10,6 +10,9 @@ const onest = Onest({
 export const metadata = {
   title: 'Kartu Kendali Anggaran',
   description: 'Aplikasi Pencatatan Kartu Kendali Anggaran',
+  icons: {
+    icon: '/favicon.png',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

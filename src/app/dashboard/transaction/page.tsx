@@ -54,7 +54,11 @@ function calculatePPN(nilaiKwitansi: number, jenisPajak: string) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  return <Badge className={status === 'Close' ? 'bg-green-500' : status === 'Proses' ? 'bg-yellow-500 text-black' : 'bg-gray-300 text-black'}>{status}</Badge>
+  return <Badge className={
+    status === 'Close' ? 'bg-green-100 text-green-600' : 
+    status === 'Proses' ? 'bg-yellow-100 text-yellow-600' : 
+    'bg-blue-100 text-blue-600'
+  }>{status}</Badge>
 }
 
 export default function TransactionPage() {
@@ -190,8 +194,8 @@ export default function TransactionPage() {
 
   const columns: ColumnDef<Transaction>[] = [
     { accessorKey: 'tanggalKwitansi', header: 'Tgl Kwitansi', cell: ({ row }) => row.original.tanggalKwitansi ? format(new Date(row.original.tanggalKwitansi), 'dd MMM yy', { locale: idLocale }) : '-' },
-    { accessorKey: 'glAccount.code', header: 'GL', cell: ({ row }) => row.original.glAccount.code },
-    { accessorKey: 'quarter', header: 'Q', cell: ({ row }) => `Q${row.getValue('quarter')}` },
+    { accessorKey: 'glAccount.code', header: 'GL Account', cell: ({ row }) => row.original.glAccount.code },
+    { accessorKey: 'quarter', header: 'Kuartal', cell: ({ row }) => `Q${row.getValue('quarter')}` },
     { accessorKey: 'regionalCode', header: 'Regional', cell: ({ row }) => regionals.find(r => r.code === row.original.regionalCode)?.name || row.original.regionalCode },
     { accessorKey: 'kegiatan', header: 'Kegiatan' },
     { accessorKey: 'nilaiKwitansi', header: () => <div className="text-right">Nilai (Rp)</div>, cell: ({ row }) => <div className="text-right">{row.original.nilaiKwitansi.toLocaleString('id-ID')}</div> },
@@ -599,7 +603,7 @@ export default function TransactionPage() {
               {/* Status */}
               <div className="flex items-center justify-between mb-6 pb-4 border-b">
                 <span className="text-sm font-semibold">Status</span>
-                <Badge className="bg-yellow-500 text-black">Proses</Badge>
+                <StatusBadge status="Proses" />
               </div>
 
               {/* Task Checklist */}
