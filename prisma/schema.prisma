@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -51,18 +50,20 @@ model Vendor {
 }
 
 model Budget {
-  id          String   @id @default(cuid())
-  glAccountId String
-  glAccount   GlAccount @relation(fields: [glAccountId], references: [id])
-  year        Int
-  totalAmount Float
-  q1Amount    Float    @default(0)
-  q2Amount    Float    @default(0)
-  q3Amount    Float    @default(0)
-  q4Amount    Float    @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  allocations RegionalAllocation[]
+  id              String   @id @default(cuid())
+  glAccountId     String
+  glAccount       GlAccount @relation(fields: [glAccountId], references: [id])
+  year            Int
+  rkap            Float    @default(0)  // Nilai RKAP
+  releasePercent  Float    @default(100) // Release Budget %
+  totalAmount     Float    // Anggaran Release (rkap * releasePercent / 100)
+  q1Amount        Float    @default(0)
+  q2Amount        Float    @default(0)
+  q3Amount        Float    @default(0)
+  q4Amount        Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  allocations     RegionalAllocation[]
 
   @@unique([glAccountId, year])
 }

@@ -20,12 +20,16 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     nilaiTanpaPPN = nilaiKwitansi - nilaiPPN
   }
 
-  // Determine status
-  let status = 'Open'
-  if (data.tglTransferVendor) {
-    status = 'Close'
-  } else if (data.noTiketMydx || data.tglSerahFinance) {
-    status = 'Proses'
+  // Use provided status or determine automatically
+  let status = data.status
+  if (!status) {
+    if (data.tglTransferVendor) {
+      status = 'Close'
+    } else if (data.noTiketMydx || data.tglSerahFinance) {
+      status = 'Proses'
+    } else {
+      status = 'Open'
+    }
   }
 
   const transaction = await prisma.transaction.update({

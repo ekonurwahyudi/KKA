@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,12 +11,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CurrencyInput } from '@/components/ui/currency-input'
-import { Calculator, Settings, Pencil, Trash2, CheckCircle, Percent, RotateCcw } from 'lucide-react'
+import { Calculator, Settings, Pencil, Trash2, CheckCircle, Percent, RotateCcw, Upload, Download, X } from 'lucide-react'
 
 interface GlAccount { id: string; code: string; description: string; keterangan: string }
 interface Regional { id: string; code: string; name: string }
 interface Budget {
-  id: string; glAccountId: string; year: number; totalAmount: number
+  id: string; glAccountId: string; year: number; rkap: number; releasePercent: number; totalAmount: number
   q1Amount: number; q2Amount: number; q3Amount: number; q4Amount: number
   glAccount: GlAccount; allocations: { regionalCode: string; quarter: number; amount: number; percentage: number }[]
 }
@@ -27,6 +27,8 @@ export default function BudgetPage() {
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [selectedGl, setSelectedGl] = useState('')
   const [year, setYear] = useState(new Date().getFullYear())
+  const [rkap, setRkap] = useState(0)
+  const [releasePercent, setReleasePercent] = useState(100)
   const [totalAmount, setTotalAmount] = useState(0)
   const [quarters, setQuarters] = useState({ q1: 0, q2: 0, q3: 0, q4: 0 })
   const [allocations, setAllocations] = useState<Record<string, number>>({})
@@ -34,12 +36,27 @@ export default function BudgetPage() {
   const [selectedBudget, setSelectedBudget] = useState<Budget | null>(null)
   const [showAllocation, setShowAllocation] = useState(false)
   const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success')
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [editRkap, setEditRkap] = useState(0)
+  const [editReleasePercent, setEditReleasePercent] = useState(100)
   const [editTotal, setEditTotal] = useState(0)
   const [editQuarters, setEditQuarters] = useState({ q1: 0, q2: 0, q3: 0, q4: 0 })
+  const [importing, setImporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Auto calculate totalAmount when rkap or releasePercent changes
+  useEffect(() => {
+    setTotalAmount(Math.floor(rkap * releasePercent / 100))
+  }, [rkap, releasePercent])
+
+  // Auto calculate editTotal when editRkap or editReleasePercent changes
+  useEffect(() => {
+    setEditTotal(Math.floor(editRkap * editReleasePercent / 100))
+  }, [editRkap, editReleasePercent])
 
   useEffect(() => {
     fetch('/api/gl-account').then(r => r.json()).then(setGlAccounts)
@@ -59,13 +76,48 @@ export default function BudgetPage() {
     setEditQuarters({ q1: perQuarter, q2: perQuarter, q3: perQuarter, q4: editTotal - perQuarter * 3 })
   }
 
+  const downloadTemplate = () => {
+    window.location.href = '/api/budget/template'
+  }
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImporting(true)
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('year', year.toString())
+
+    try {
+      const res = await fetch('/api/budget/import', { method: 'POST', body: formData })
+      const result = await res.json()
+
+      if (result.error) {
+        setMessageType('error')
+        setMessage(result.error)
+      } else {
+        setMessageType('success')
+        setMessage(`Import selesai: ${result.success} berhasil, ${result.failed} gagal`)
+        loadBudgets()
+      }
+    } catch {
+      setMessageType('error')
+      setMessage('Gagal mengimport file')
+    } finally {
+      setImporting(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      setTimeout(() => setMessage(''), 5000)
+    }
+  }
+
   const saveBudget = async () => {
     await fetch('/api/budget', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ glAccountId: selectedGl, year, totalAmount, q1Amount: quarters.q1, q2Amount: quarters.q2, q3Amount: quarters.q3, q4Amount: quarters.q4 }),
+      body: JSON.stringify({ glAccountId: selectedGl, year, rkap, releasePercent, totalAmount, q1Amount: quarters.q1, q2Amount: quarters.q2, q3Amount: quarters.q3, q4Amount: quarters.q4 }),
     })
-    loadBudgets(); setSelectedGl(''); setTotalAmount(0); setQuarters({ q1: 0, q2: 0, q3: 0, q4: 0 })
-    setMessage('Anggaran berhasil disimpan!'); setTimeout(() => setMessage(''), 3000)
+    loadBudgets(); setSelectedGl(''); setRkap(0); setReleasePercent(100); setTotalAmount(0); setQuarters({ q1: 0, q2: 0, q3: 0, q4: 0 })
+    setMessageType('success'); setMessage('Anggaran berhasil disimpan!'); setTimeout(() => setMessage(''), 3000)
   }
 
   const openAllocation = (budget: Budget) => {
@@ -175,7 +227,10 @@ export default function BudgetPage() {
   }
 
   const openEditDialog = (budget: Budget) => {
-    setEditingBudget(budget); setEditTotal(budget.totalAmount)
+    setEditingBudget(budget)
+    setEditRkap(budget.rkap || budget.totalAmount)
+    setEditReleasePercent(budget.releasePercent || 100)
+    setEditTotal(budget.totalAmount)
     setEditQuarters({ q1: budget.q1Amount, q2: budget.q2Amount, q3: budget.q3Amount, q4: budget.q4Amount })
     setShowEditDialog(true)
   }
@@ -184,7 +239,7 @@ export default function BudgetPage() {
     if (!editingBudget) return
     await fetch(`/api/budget/${editingBudget.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ totalAmount: editTotal, q1Amount: editQuarters.q1, q2Amount: editQuarters.q2, q3Amount: editQuarters.q3, q4Amount: editQuarters.q4 }),
+      body: JSON.stringify({ rkap: editRkap, releasePercent: editReleasePercent, totalAmount: editTotal, q1Amount: editQuarters.q1, q2Amount: editQuarters.q2, q3Amount: editQuarters.q3, q4Amount: editQuarters.q4 }),
     })
     setShowEditDialog(false); setEditingBudget(null); loadBudgets()
     setMessage('Anggaran berhasil diupdate!'); setTimeout(() => setMessage(''), 3000)
@@ -194,12 +249,14 @@ export default function BudgetPage() {
     if (!deleteId) return
     await fetch(`/api/budget/${deleteId}`, { method: 'DELETE' })
     setShowDeleteDialog(false); setDeleteId(null); loadBudgets()
-    setMessage('Anggaran berhasil dihapus!'); setTimeout(() => setMessage(''), 3000)
+    setMessageType('success'); setMessage('Anggaran berhasil dihapus!'); setTimeout(() => setMessage(''), 3000)
   }
 
   const columns: ColumnDef<Budget>[] = [
     { accessorKey: 'glAccount.code', header: 'GL Account', cell: ({ row }) => `${row.original.glAccount.code} - ${row.original.glAccount.description}` },
-    { accessorKey: 'totalAmount', header: () => <div className="text-right">Total (Rp)</div>, cell: ({ row }) => <div className="text-right">{(row.getValue('totalAmount') as number).toLocaleString('id-ID')}</div> },
+    { accessorKey: 'rkap', header: () => <div className="text-right">RKAP (Rp)</div>, cell: ({ row }) => <div className="text-right">{(row.original.rkap || 0).toLocaleString('id-ID')}</div> },
+    { accessorKey: 'releasePercent', header: () => <div className="text-right">Release</div>, cell: ({ row }) => <div className="text-right">{row.original.releasePercent || 100}%</div> },
+    { accessorKey: 'totalAmount', header: () => <div className="text-right">Release (Rp)</div>, cell: ({ row }) => <div className="text-right">{(row.getValue('totalAmount') as number).toLocaleString('id-ID')}</div> },
     { accessorKey: 'q1Amount', header: () => <div className="text-right">Q1 (Rp)</div>, cell: ({ row }) => <div className="text-right">{(row.getValue('q1Amount') as number).toLocaleString('id-ID')}</div> },
     { accessorKey: 'q2Amount', header: () => <div className="text-right">Q2 (Rp)</div>, cell: ({ row }) => <div className="text-right">{(row.getValue('q2Amount') as number).toLocaleString('id-ID')}</div> },
     { accessorKey: 'q3Amount', header: () => <div className="text-right">Q3 (Rp)</div>, cell: ({ row }) => <div className="text-right">{(row.getValue('q3Amount') as number).toLocaleString('id-ID')}</div> },
@@ -217,16 +274,37 @@ export default function BudgetPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div><h1 className="text-2xl font-bold">Input Anggaran Tahunan</h1><p className="text-muted-foreground text-sm">Kelola anggaran per GL Account dan alokasi regional</p></div>
-        <div className="flex items-center gap-2">
-          <Label className="text-sm">Tahun:</Label>
-          <Select value={year.toString()} onValueChange={(v) => setYear(parseInt(v))}>
-            <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={downloadTemplate}>
+              <Download className="h-4 w-4 mr-2" />Template
+            </Button>
+            <Button size="sm" onClick={() => fileInputRef.current?.click()} disabled={importing} className="bg-green-500 hover:bg-green-600 text-white hover:text-white border-0">
+              <Upload className="h-4 w-4 mr-2" />{importing ? 'Importing...' : 'Import'}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleImport}
+              className="hidden"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="text-sm">Tahun:</Label>
+            <Select value={year.toString()} onValueChange={(v) => setYear(parseInt(v))}>
+              <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
             <SelectContent>{[2024, 2025, 2026, 2027, 2028].map(y => <SelectItem key={y} value={y.toString()}>{y}</SelectItem>)}</SelectContent>
           </Select>
+          </div>
         </div>
       </div>
 
-      {message && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl flex items-center gap-2"><CheckCircle className="h-4 w-4" />{message}</div>}
+      {message && (
+        <div className={`px-4 py-3 rounded-xl flex items-center gap-2 ${messageType === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+          <CheckCircle className="h-4 w-4" />{message}
+        </div>
+      )}
 
       <Card className="border">
         <CardHeader>
@@ -234,21 +312,39 @@ export default function BudgetPage() {
           <CardDescription>Masukkan anggaran per GL Account dan pembagian kuartal</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
+          <div className="flex gap-4 items-end">
+            <div className="flex-1 space-y-2">
               <Label>GL Account</Label>
               <Select value={selectedGl} onValueChange={setSelectedGl}>
                 <SelectTrigger><SelectValue placeholder="Pilih GL Account" /></SelectTrigger>
                 <SelectContent>{glAccounts.map(gl => <SelectItem key={gl.id} value={gl.id}>{gl.code} - {gl.description}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="space-y-2"><Label>Total Anggaran (Rp)</Label><CurrencyInput value={totalAmount} onChange={setTotalAmount} /></div>
-            <div className="flex items-end"><Button variant="secondary" onClick={autoSplitQuarters}><Calculator className="h-4 w-4 mr-2" />Bagi Otomatis</Button></div>
+            <div className="flex-1 space-y-2"><Label>Nilai RKAP</Label><CurrencyInput value={rkap} onChange={setRkap} /></div>
+            <div className="space-y-2">
+              <Label>Release</Label>
+              <div className="flex h-10 w-20 rounded-md border border-input bg-background text-sm ring-offset-background overflow-hidden">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={releasePercent}
+                  onChange={(e) => setReleasePercent(parseFloat(e.target.value) || 0)}
+                  className="w-12 px-2 py-2 text-right bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <span className="flex items-center justify-center w-8 bg-muted text-muted-foreground border-l text-sm">%</span>
+              </div>
+            </div>
+            <div className="flex-1 space-y-2">
+              <Label>Anggaran Release</Label>
+              <CurrencyInput value={totalAmount} onChange={() => {}} disabled className="bg-muted/50" />
+            </div>
           </div>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-5 gap-4">
             {(['q1', 'q2', 'q3', 'q4'] as const).map((q, i) => (
-              <div key={q} className="space-y-2"><Label>Q{i + 1} (Rp)</Label><CurrencyInput value={quarters[q]} onChange={(v) => setQuarters({ ...quarters, [q]: v })} /></div>
+              <div key={q} className="space-y-2"><Label>Kuartal (Q{i + 1})</Label><CurrencyInput value={quarters[q]} onChange={(v) => setQuarters({ ...quarters, [q]: v })} /></div>
             ))}
+            <div className="flex items-end"><Button onClick={autoSplitQuarters} className="w-full"><Calculator className="h-4 w-4 mr-2" />Bagi Otomatis</Button></div>
           </div>
           <Button onClick={saveBudget} disabled={!selectedGl}>Simpan Anggaran</Button>
         </CardContent>
@@ -265,7 +361,13 @@ export default function BudgetPage() {
       {/* Allocation Modal */}
       {showAllocation && selectedBudget && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="max-w-4xl w-full max-h-[90vh] overflow-auto border">
+          <Card className="max-w-4xl w-full max-h-[90vh] overflow-auto border relative">
+            <button 
+              onClick={() => setShowAllocation(false)} 
+              className="absolute right-4 top-4 rounded-sm opacity-70 hover:opacity-100 z-10"
+            >
+              <X className="h-4 w-4" />
+            </button>
             <CardHeader className="border-b">
               <CardTitle>Alokasi Regional</CardTitle>
               <p className="text-sm text-muted-foreground">{selectedBudget.glAccount.code} - {selectedBudget.glAccount.description}</p>
@@ -380,22 +482,44 @@ export default function BudgetPage() {
               />
             </div>
 
-            {/* Total Anggaran */}
+            {/* RKAP */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">Total Anggaran (Rp)</Label>
-                <Button variant="outline" size="sm" onClick={autoSplitEditQuarters}>
-                  <Calculator className="h-4 w-4 mr-2" />Bagi Otomatis
-                </Button>
-              </div>
-              <CurrencyInput value={editTotal} onChange={setEditTotal} />
+              <Label className="text-sm text-muted-foreground">Nilai RKAP</Label>
+              <CurrencyInput value={editRkap} onChange={setEditRkap} />
             </div>
+
+            {/* Release % and Anggaran Release */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-sm text-muted-foreground">Release</Label>
+                <div className="flex h-10 w-full rounded-md border border-input bg-background text-sm ring-offset-background overflow-hidden">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={editReleasePercent}
+                    onChange={(e) => setEditReleasePercent(parseFloat(e.target.value) || 0)}
+                    className="flex-1 px-3 py-2 text-right bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <span className="flex items-center justify-center px-3 bg-muted text-muted-foreground border-l">%</span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm text-muted-foreground">Anggaran Release</Label>
+                <CurrencyInput value={editTotal} onChange={() => {}} disabled className="bg-muted/50" />
+              </div>
+            </div>
+
+            {/* Bagi Otomatis Button */}
+            <Button onClick={autoSplitEditQuarters} className="w-full">
+              <Calculator className="h-4 w-4 mr-2" />Bagi Otomatis
+            </Button>
 
             {/* Quarters Grid */}
             <div className="grid grid-cols-2 gap-4">
               {(['q1', 'q2', 'q3', 'q4'] as const).map((q, i) => (
                 <div key={q} className="space-y-1.5">
-                  <Label className="text-sm text-muted-foreground">Kuartal {i + 1} (Rp)</Label>
+                  <Label className="text-sm text-muted-foreground">Kuartal (Q{i + 1})</Label>
                   <CurrencyInput value={editQuarters[q]} onChange={(v) => setEditQuarters({ ...editQuarters, [q]: v })} />
                 </div>
               ))}

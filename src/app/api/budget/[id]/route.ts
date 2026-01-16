@@ -7,6 +7,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const budget = await prisma.budget.update({
     where: { id: params.id },
     data: {
+      rkap: data.rkap,
+      releasePercent: data.releasePercent,
       totalAmount: data.totalAmount,
       q1Amount: data.q1Amount,
       q2Amount: data.q2Amount,

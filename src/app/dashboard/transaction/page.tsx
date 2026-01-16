@@ -104,6 +104,7 @@ export default function TransactionPage() {
   const [editNilaiTransfer, setEditNilaiTransfer] = useState<number | undefined>()
   const [editTaskTransferVendor, setEditTaskTransferVendor] = useState(false)
   const [editTaskTerimaBerkas, setEditTaskTerimaBerkas] = useState(false)
+  const [editStatus, setEditStatus] = useState('Open')
 
   useEffect(() => {
     fetch('/api/gl-account').then(r => r.json()).then(setGlAccounts)
@@ -159,6 +160,7 @@ export default function TransactionPage() {
     setEditPicFinance(t.picFinance || ''); setEditNoHpFinance(t.noHpFinance || '')
     setEditTglTransferVendor(t.tglTransferVendor ? new Date(t.tglTransferVendor) : undefined)
     setEditNilaiTransfer(t.nilaiTransfer); setEditTaskTransferVendor(t.taskTransferVendor); setEditTaskTerimaBerkas(t.taskTerimaBerkas)
+    setEditStatus(t.status)
     setShowEditDialog(true)
   }
 
@@ -171,7 +173,7 @@ export default function TransactionPage() {
         tanggalKwitansi: editTanggalKwitansi?.toISOString(), nilaiKwitansi: editNilaiKwitansi, jenisPajak: editJenisPajak, keterangan: editKeterangan,
         jenisPengadaan: editJenisPengadaan, vendorId: editVendorId || null, noTiketMydx: editNoTiketMydx, tglSerahFinance: editTglSerahFinance?.toISOString(),
         picFinance: editPicFinance, noHpFinance: editNoHpFinance, tglTransferVendor: editTglTransferVendor?.toISOString(),
-        nilaiTransfer: editNilaiTransfer, taskTransferVendor: editTaskTransferVendor, taskTerimaBerkas: editTaskTerimaBerkas,
+        nilaiTransfer: editNilaiTransfer, taskTransferVendor: editTaskTransferVendor, taskTerimaBerkas: editTaskTerimaBerkas, status: 'Proses',
       }),
     })
     setShowEditDialog(false); setEditingTransaction(null); loadTransactions()
@@ -307,13 +309,8 @@ export default function TransactionPage() {
       <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto p-0">
           <DialogHeader className="px-6 pt-6 pb-2">
-            <div className="flex justify-between items-start">
-              <div>
-                <DialogTitle>Detail Transaksi</DialogTitle>
-                <p className="text-sm text-muted-foreground mt-0.5">Informasi lengkap transaksi pencatatan anggaran</p>
-              </div>
-              <StatusBadge status={viewingTransaction?.status || ''} />
-            </div>
+            <DialogTitle>Detail Transaksi</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-0.5">Informasi lengkap transaksi pencatatan anggaran</p>
           </DialogHeader>
           {viewingTransaction && (
             <div className="grid grid-cols-3 gap-0">
@@ -431,8 +428,15 @@ export default function TransactionPage() {
                 </div>
               </div>
 
-              {/* Right Side - Task Checklist */}
+              {/* Right Side - Status & Task Checklist */}
               <div className="col-span-1 px-5 py-6 bg-muted/30">
+                {/* Status */}
+                <div className="flex items-center justify-between mb-6 pb-4 border-b">
+                  <span className="text-sm font-semibold">Status</span>
+                  <StatusBadge status={viewingTransaction.status} />
+                </div>
+
+                {/* Task Checklist */}
                 <div className="space-y-4">
                   <p className="text-sm font-semibold">Task Checklist</p>
                   <div className="space-y-3">
@@ -590,8 +594,15 @@ export default function TransactionPage() {
               </div>
             </div>
 
-            {/* Right Side - Task Checklist */}
+            {/* Right Side - Status & Task Checklist */}
             <div className="col-span-1 px-5 py-6 bg-muted/30">
+              {/* Status */}
+              <div className="flex items-center justify-between mb-6 pb-4 border-b">
+                <span className="text-sm font-semibold">Status</span>
+                <Badge className="bg-yellow-500 text-black">Proses</Badge>
+              </div>
+
+              {/* Task Checklist */}
               <div className="space-y-4">
                 <p className="text-sm font-semibold">Task Checklist</p>
                 <div className="space-y-3">

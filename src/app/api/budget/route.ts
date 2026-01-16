@@ -20,6 +20,8 @@ export async function POST(req: NextRequest) {
       glAccountId_year: { glAccountId: data.glAccountId, year: data.year },
     },
     update: {
+      rkap: data.rkap || data.totalAmount,
+      releasePercent: data.releasePercent || 100,
       totalAmount: data.totalAmount,
       q1Amount: data.q1Amount,
       q2Amount: data.q2Amount,
@@ -29,6 +31,8 @@ export async function POST(req: NextRequest) {
     create: {
       glAccountId: data.glAccountId,
       year: data.year,
+      rkap: data.rkap || data.totalAmount,
+      releasePercent: data.releasePercent || 100,
       totalAmount: data.totalAmount,
       q1Amount: data.q1Amount,
       q2Amount: data.q2Amount,
