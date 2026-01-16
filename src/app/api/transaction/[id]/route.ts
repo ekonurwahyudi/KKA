@@ -20,16 +20,49 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     nilaiTanpaPPN = nilaiKwitansi - nilaiPPN
   }
 
-  // Use provided status or determine automatically
-  let status = data.status
-  if (!status) {
-    if (data.tglTransferVendor) {
-      status = 'Close'
-    } else if (data.noTiketMydx || data.tglSerahFinance) {
-      status = 'Proses'
-    } else {
-      status = 'Open'
-    }
+  // Task values
+  const taskTransferVendor = data.taskTransferVendor || false
+  const taskTerimaBerkas = data.taskTerimaBerkas || false
+  const taskUploadMydx = !!data.noTiketMydx
+  const taskSerahFinance = !!data.tglSerahFinance
+  const taskVendorDibayar = !!data.tglTransferVendor
+
+  // Determine status automatically based on fields and tasks
+  // Close: semua field dan task terisi (kecuali keterangan)
+  // Proses: ada perubahan/update dari Open
+  // Open: baru dibuat
+  
+  let status = 'Proses' // Default saat edit adalah Proses
+  
+  // Check if all required fields are filled for Close status
+  const allFieldsFilled = 
+    data.glAccountId &&
+    data.quarter &&
+    data.regionalCode &&
+    data.kegiatan &&
+    data.regionalPengguna &&
+    data.tanggalKwitansi &&
+    nilaiKwitansi > 0 &&
+    data.jenisPajak &&
+    data.jenisPengadaan &&
+    data.vendorId &&
+    data.noTiketMydx &&
+    data.tglSerahFinance &&
+    data.picFinance &&
+    data.noHpFinance &&
+    data.tglTransferVendor &&
+    data.nilaiTransfer
+
+  // Check if all tasks are completed
+  const allTasksCompleted = 
+    taskTransferVendor &&
+    taskTerimaBerkas &&
+    taskUploadMydx &&
+    taskSerahFinance &&
+    taskVendorDibayar
+
+  if (allFieldsFilled && allTasksCompleted) {
+    status = 'Close'
   }
 
   const transaction = await prisma.transaction.update({
@@ -54,11 +87,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       noHpFinance: data.noHpFinance,
       tglTransferVendor: data.tglTransferVendor ? new Date(data.tglTransferVendor) : null,
       nilaiTransfer: data.nilaiTransfer,
-      taskTransferVendor: data.taskTransferVendor || false,
-      taskTerimaBerkas: data.taskTerimaBerkas || false,
-      taskUploadMydx: !!data.noTiketMydx,
-      taskSerahFinance: !!data.tglSerahFinance,
-      taskVendorDibayar: !!data.tglTransferVendor,
+      taskTransferVendor,
+      taskTerimaBerkas,
+      taskUploadMydx,
+      taskSerahFinance,
+      taskVendorDibayar,
       status,
     },
   })

@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { format } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
+import ExcelJS from 'exceljs'
+import { saveAs } from 'file-saver'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,13 +18,21 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Wallet, TrendingUp, TrendingDown, CheckCircle, Pencil, Trash2, AlertTriangle, Eye } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { Wallet, TrendingUp, TrendingDown, CheckCircle, Pencil, Trash2, AlertTriangle, Eye, Check, ChevronsUpDown, BookOpen, Hourglass, Filter, FileSpreadsheet } from 'lucide-react'
 import { CurrencyInput } from '@/components/ui/currency-input'
+import { cn } from '@/lib/utils'
 
 interface GlAccount { id: string; code: string; description: string }
 interface Regional { id: string; code: string; name: string }
 interface Vendor { id: string; name: string; alamat?: string; pic?: string; phone?: string; email?: string }
 interface RemainingInfo { allocated: number; used: number; remaining: number }
+interface Budget { 
+  id: string; glAccountId: string; glAccount: GlAccount; year: number
+  rkap: number; releasePercent: number; totalAmount: number
+  q1Amount: number; q2Amount: number; q3Amount: number; q4Amount: number
+}
 
 interface Transaction {
   id: string; glAccountId: string; glAccount: GlAccount; quarter: number; regionalCode: string
@@ -37,7 +47,7 @@ interface Transaction {
 }
 
 const JENIS_PAJAK = [
-  { value: 'TanpaPPN', label: 'Tanpa PPN' }, { value: 'PPN11', label: 'PPN 11%' },
+  { value: 'TanpaPPN', label: 'Non-PPN' }, { value: 'PPN11', label: 'PPN 11%' },
   { value: 'PPNJasa2', label: 'PPN Jasa 2%' }, { value: 'PPNInklaring1.1', label: 'PPN Inklaring 1.1%' },
 ]
 const JENIS_PENGADAAN = [
@@ -54,11 +64,19 @@ function calculatePPN(nilaiKwitansi: number, jenisPajak: string) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  return <Badge className={
-    status === 'Close' ? 'bg-green-100 text-green-600' : 
-    status === 'Proses' ? 'bg-yellow-100 text-yellow-600' : 
-    'bg-blue-100 text-blue-600'
-  }>{status}</Badge>
+  return (
+    <Badge className={cn(
+      "gap-1.5",
+      status === 'Close' ? 'bg-green-100 text-green-600' : 
+      status === 'Proses' ? 'bg-yellow-100 text-yellow-600' : 
+      'bg-blue-100 text-blue-600'
+    )}>
+      {status === 'Close' && <CheckCircle className="h-3 w-3" />}
+      {status === 'Proses' && <Hourglass className="h-3 w-3" />}
+      {status === 'Open' && <BookOpen className="h-3 w-3" />}
+      {status}
+    </Badge>
+  )
 }
 
 export default function TransactionPage() {
@@ -70,6 +88,13 @@ export default function TransactionPage() {
   const [year, setYear] = useState(new Date().getFullYear())
   const [message, setMessage] = useState('')
   const [activeTab, setActiveTab] = useState('all')
+  
+  // Filter states
+  const [filterGl, setFilterGl] = useState('')
+  const [filterQuarter, setFilterQuarter] = useState('')
+  const [filterRegional, setFilterRegional] = useState('')
+  const [filterPengadaan, setFilterPengadaan] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Form states
   const [selectedGl, setSelectedGl] = useState('')
@@ -79,6 +104,7 @@ export default function TransactionPage() {
   const [regionalPengguna, setRegionalPengguna] = useState('')
   const [tanggalKwitansi, setTanggalKwitansi] = useState<Date | undefined>()
   const [nilaiKwitansi, setNilaiKwitansi] = useState(0)
+  const [jenisPengadaan, setJenisPengadaan] = useState('')
 
   // Dialog states
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
@@ -108,7 +134,6 @@ export default function TransactionPage() {
   const [editNilaiTransfer, setEditNilaiTransfer] = useState<number | undefined>()
   const [editTaskTransferVendor, setEditTaskTransferVendor] = useState(false)
   const [editTaskTerimaBerkas, setEditTaskTerimaBerkas] = useState(false)
-  const [editStatus, setEditStatus] = useState('Open')
 
   useEffect(() => {
     fetch('/api/gl-account').then(r => r.json()).then(setGlAccounts)
@@ -132,8 +157,16 @@ export default function TransactionPage() {
   const prosesCount = transactions.filter(t => t.status === 'Proses').length
   const closeCount = transactions.filter(t => t.status === 'Close').length
 
-  // Filtered transactions by tab
-  const filteredTransactions = activeTab === 'all' ? transactions : transactions.filter(t => t.status === activeTab)
+  // Filtered transactions by tab and filters
+  const filteredTransactions = transactions.filter(t => {
+    if (activeTab !== 'all' && t.status !== activeTab) return false
+    if (filterGl && t.glAccountId !== filterGl) return false
+    if (filterQuarter && t.quarter !== parseInt(filterQuarter)) return false
+    if (filterRegional && t.regionalCode !== filterRegional) return false
+    if (filterPengadaan && t.jenisPengadaan !== filterPengadaan) return false
+    if (searchQuery && !t.kegiatan.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    return true
+  })
 
   const editPpnCalc = calculatePPN(editNilaiKwitansi, editJenisPajak)
 
@@ -142,10 +175,10 @@ export default function TransactionPage() {
     if (!remaining || remaining.remaining <= 0) return
     await fetch('/api/transaction', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ glAccountId: selectedGl, quarter: parseInt(quarter), regionalCode: regional, kegiatan, regionalPengguna, year, tanggalKwitansi: tanggalKwitansi?.toISOString(), nilaiKwitansi }),
+      body: JSON.stringify({ glAccountId: selectedGl, quarter: parseInt(quarter), regionalCode: regional, kegiatan, regionalPengguna, year, tanggalKwitansi: tanggalKwitansi?.toISOString(), nilaiKwitansi, jenisPengadaan }),
     })
     setMessage('Transaksi berhasil disimpan!')
-    setKegiatan(''); setRegionalPengguna(''); setTanggalKwitansi(undefined); setNilaiKwitansi(0)
+    setKegiatan(''); setRegionalPengguna(''); setTanggalKwitansi(undefined); setNilaiKwitansi(0); setJenisPengadaan('')
     fetch(`/api/transaction/remaining?glAccountId=${selectedGl}&quarter=${quarter}&regionalCode=${regional}&year=${year}`).then(r => r.json()).then(setRemaining).catch(() => {})
     loadTransactions(); setTimeout(() => setMessage(''), 3000)
   }
@@ -164,7 +197,6 @@ export default function TransactionPage() {
     setEditPicFinance(t.picFinance || ''); setEditNoHpFinance(t.noHpFinance || '')
     setEditTglTransferVendor(t.tglTransferVendor ? new Date(t.tglTransferVendor) : undefined)
     setEditNilaiTransfer(t.nilaiTransfer); setEditTaskTransferVendor(t.taskTransferVendor); setEditTaskTerimaBerkas(t.taskTerimaBerkas)
-    setEditStatus(t.status)
     setShowEditDialog(true)
   }
 
@@ -177,7 +209,7 @@ export default function TransactionPage() {
         tanggalKwitansi: editTanggalKwitansi?.toISOString(), nilaiKwitansi: editNilaiKwitansi, jenisPajak: editJenisPajak, keterangan: editKeterangan,
         jenisPengadaan: editJenisPengadaan, vendorId: editVendorId || null, noTiketMydx: editNoTiketMydx, tglSerahFinance: editTglSerahFinance?.toISOString(),
         picFinance: editPicFinance, noHpFinance: editNoHpFinance, tglTransferVendor: editTglTransferVendor?.toISOString(),
-        nilaiTransfer: editNilaiTransfer, taskTransferVendor: editTaskTransferVendor, taskTerimaBerkas: editTaskTerimaBerkas, status: 'Proses',
+        nilaiTransfer: editNilaiTransfer, taskTransferVendor: editTaskTransferVendor, taskTerimaBerkas: editTaskTerimaBerkas,
       }),
     })
     setShowEditDialog(false); setEditingTransaction(null); loadTransactions()
@@ -190,6 +222,292 @@ export default function TransactionPage() {
     setShowDeleteDialog(false); setDeleteId(null); loadTransactions()
     if (selectedGl && regional) { fetch(`/api/transaction/remaining?glAccountId=${selectedGl}&quarter=${quarter}&regionalCode=${regional}&year=${year}`).then(r => r.json()).then(setRemaining).catch(() => {}) }
     setMessage('Transaksi berhasil dihapus!'); setTimeout(() => setMessage(''), 3000)
+  }
+
+  const handleExport = async () => {
+    const MONTHS = ['JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI', 'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER']
+    
+    const transactionsWithDate = filteredTransactions.filter(t => t.tglSerahFinance)
+    const transactionsWithoutDate = filteredTransactions.filter(t => !t.tglSerahFinance)
+    
+    const groupedByMonth: { [key: number]: Transaction[] } = {}
+    transactionsWithDate.forEach(t => {
+      const month = new Date(t.tglSerahFinance!).getMonth()
+      if (!groupedByMonth[month]) groupedByMonth[month] = []
+      groupedByMonth[month].push(t)
+    })
+
+    const workbook = new ExcelJS.Workbook()
+    const ws = workbook.addWorksheet('Transaksi')
+    
+    ws.columns = [
+      { width: 5 }, { width: 18 }, { width: 15 }, { width: 60 }, { width: 15 },
+      { width: 25 }, { width: 18 }, { width: 12 }, { width: 18 }, { width: 15 }, { width: 10 }
+    ]
+    
+    ws.addRow(['Unit', ':', 'DC, DEFA OPERATION & TECHNICAL SUPPORT TIF'])
+    ws.addRow(['Cost Center', ':', 'TF3H4000'])
+    ws.addRow(['Periode', ':', year.toString()])
+    ws.addRow([])
+    
+    const headerRow = ws.addRow(['No', 'Tgl Serahkan Berkas ke FC', 'Tanggal Kwitansi', 'Kegiatan', 'Regional', 'Vendor', 'Nilai Kwitansi', 'Jenis Pajak', 'Nilai Tanpa PPN', 'Nilai PPN', 'Status'])
+    headerRow.font = { bold: true }
+    headerRow.eachCell(cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }
+      cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+    })
+    
+    let rowNum = 1
+    
+    Object.keys(groupedByMonth).map(Number).sort((a, b) => a - b).forEach(month => {
+      ws.addRow([])
+      const monthRow = ws.addRow(['', '', '', MONTHS[month]])
+      monthRow.getCell(4).font = { bold: true, size: 12 }
+      
+      groupedByMonth[month].sort((a, b) => new Date(a.tglSerahFinance!).getTime() - new Date(b.tglSerahFinance!).getTime()).forEach(t => {
+        const row = ws.addRow([
+          rowNum++, format(new Date(t.tglSerahFinance!), 'dd-MM-yy'),
+          t.tanggalKwitansi ? format(new Date(t.tanggalKwitansi), 'dd-MM-yyyy') : '-',
+          t.kegiatan, regionals.find(r => r.code === t.regionalCode)?.name || t.regionalCode,
+          t.vendor?.name || '-', t.nilaiKwitansi,
+          JENIS_PAJAK.find(p => p.value === t.jenisPajak)?.label || 'Non-PPN',
+          Math.round(t.nilaiTanpaPPN), Math.round(t.nilaiPPN), t.status
+        ])
+        row.eachCell(cell => { cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } } })
+        row.getCell(7).numFmt = '#,##0'; row.getCell(9).numFmt = '#,##0'; row.getCell(10).numFmt = '#,##0'
+      })
+    })
+    
+    if (transactionsWithoutDate.length > 0) {
+      ws.addRow([])
+      const pendingRow = ws.addRow(['', '', '', 'BELUM SERAH KE FINANCE'])
+      pendingRow.getCell(4).font = { bold: true, size: 12, color: { argb: 'FFFF0000' } }
+      
+      transactionsWithoutDate.forEach(t => {
+        const row = ws.addRow([
+          rowNum++, '-', t.tanggalKwitansi ? format(new Date(t.tanggalKwitansi), 'dd-MM-yyyy') : '-',
+          t.kegiatan, regionals.find(r => r.code === t.regionalCode)?.name || t.regionalCode,
+          t.vendor?.name || '-', t.nilaiKwitansi,
+          JENIS_PAJAK.find(p => p.value === t.jenisPajak)?.label || 'Non-PPN',
+          Math.round(t.nilaiTanpaPPN), Math.round(t.nilaiPPN), t.status
+        ])
+        row.eachCell(cell => { cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } } })
+        row.getCell(7).numFmt = '#,##0'; row.getCell(9).numFmt = '#,##0'; row.getCell(10).numFmt = '#,##0'
+      })
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer()
+    saveAs(new Blob([buffer]), `Transaksi_${year}_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`)
+  }
+
+  const handleExportKKA = async () => {
+    const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+    const QUARTER_MONTHS: { [key: number]: number[] } = { 1: [0, 1, 2], 2: [3, 4, 5], 3: [6, 7, 8], 4: [9, 10, 11] }
+    const currentMonth = new Date().getMonth()
+    const currentYear = new Date().getFullYear()
+    
+    const budgetsRes = await fetch(`/api/budget?year=${year}`)
+    const budgets: Budget[] = await budgetsRes.json()
+    
+    const workbook = new ExcelJS.Workbook()
+    
+    // Load logo
+    const logoRes = await fetch('/infranexia.png')
+    const logoBlob = await logoRes.blob()
+    const logoBuffer = await logoBlob.arrayBuffer()
+    const logoId = workbook.addImage({ buffer: logoBuffer, extension: 'png' })
+    
+    for (let q = 1; q <= 4; q++) {
+      const ws = workbook.addWorksheet(`KKA Q${q}`)
+      const quarterTransactions = filteredTransactions.filter(t => t.quarter === q)
+      const quarterMonths = QUARTER_MONTHS[q]
+      
+      const glAccountIds = Array.from(new Set(quarterTransactions.map(t => t.glAccountId)))
+      budgets.forEach(b => {
+        const qAmount = q === 1 ? b.q1Amount : q === 2 ? b.q2Amount : q === 3 ? b.q3Amount : b.q4Amount
+        if (qAmount > 0 && !glAccountIds.includes(b.glAccountId)) glAccountIds.push(b.glAccountId)
+      })
+      
+      ws.columns = [
+        { width: 5 }, { width: 12 }, { width: 50 }, { width: 18 }, { width: 18 }, { width: 18 }
+      ]
+      
+      let currentRow = 1
+      
+      for (const glId of glAccountIds) {
+        const glAccount = glAccounts.find(g => g.id === glId)
+        if (!glAccount) continue
+        
+        const budget = budgets.find(b => b.glAccountId === glId)
+        const qBudget = budget ? (q === 1 ? budget.q1Amount : q === 2 ? budget.q2Amount : q === 3 ? budget.q3Amount : budget.q4Amount) : 0
+        const monthlyBudget = qBudget / 3
+        const glTransactions = quarterTransactions.filter(t => t.glAccountId === glId)
+        
+        // Logo (far right)
+        ws.addImage(logoId, { tl: { col: 5, row: currentRow - 1 }, ext: { width: 100, height: 35 } })
+        currentRow += 3
+        
+        // Title with border
+        ws.mergeCells(currentRow, 1, currentRow, 6)
+        ws.getCell(currentRow, 1).value = 'KARTU KENDALI ANGGARAN'
+        ws.getCell(currentRow, 1).font = { bold: true, size: 11 }
+        ws.getCell(currentRow, 1).alignment = { horizontal: 'center', vertical: 'middle' }
+        ws.getCell(currentRow, 1).border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+        currentRow += 1
+        
+        const headerStartRow = currentRow // Start of header info box
+        
+        // Header info row 1 - with left/right border only
+        ws.mergeCells(currentRow, 1, currentRow, 2)
+        ws.getCell(currentRow, 1).value = 'Unit'
+        ws.getCell(currentRow, 1).border = { left: { style: 'thin' } }
+        ws.getCell(currentRow, 3).value = ':   DC, DEFA OPERATION & TECHNICAL SUPPORT TIF'
+        ws.getCell(currentRow, 4).value = 'GL Account'
+        ws.mergeCells(currentRow, 5, currentRow, 6)
+        ws.getCell(currentRow, 5).value = ':   ' + glAccount.code
+        ws.getCell(currentRow, 6).border = { right: { style: 'thin' } }
+        currentRow++
+        
+        // Header info row 2
+        ws.mergeCells(currentRow, 1, currentRow, 2)
+        ws.getCell(currentRow, 1).value = 'Cost Center'
+        ws.getCell(currentRow, 1).border = { left: { style: 'thin' } }
+        ws.getCell(currentRow, 3).value = ':   TF3H4000'
+        ws.getCell(currentRow, 4).value = 'Deskripsi akun'
+        ws.mergeCells(currentRow, 5, currentRow, 6)
+        ws.getCell(currentRow, 5).value = ':   ' + glAccount.description
+        ws.getCell(currentRow, 6).border = { right: { style: 'thin' } }
+        currentRow++
+        
+        // Header info row 3
+        ws.mergeCells(currentRow, 1, currentRow, 2)
+        ws.getCell(currentRow, 1).value = 'Periode'
+        ws.getCell(currentRow, 1).border = { left: { style: 'thin' } }
+        ws.getCell(currentRow, 3).value = `:   ${year} (Q.${q})`
+        ws.getCell(currentRow, 6).border = { right: { style: 'thin' } }
+        currentRow++
+        
+        // Empty row between header info and table - with left/right border to connect
+        ws.getCell(currentRow, 1).border = { left: { style: 'thin' } }
+        ws.getCell(currentRow, 6).border = { right: { style: 'thin' } }
+        currentRow++
+        
+        // Table header
+        const headers = ['NO', 'TANGGAL', 'KEGIATAN', 'BUDGET', 'PENGGUNAAN', 'SISA BUDGET']
+        headers.forEach((h, i) => {
+          const cell = ws.getCell(currentRow, i + 1)
+          cell.value = h
+          cell.font = { bold: true }
+          cell.alignment = { horizontal: 'center', vertical: 'middle' }
+          cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+        })
+        currentRow++
+        
+        let rowNum = 1
+        let runningBudget = 0
+        let totalPenggunaan = 0
+        
+        interface DataRow { date: Date; kegiatan: string; budget: number; penggunaan: number; isBudget: boolean }
+        const dataRows: DataRow[] = []
+        
+        // Budget entries per month
+        quarterMonths.forEach(monthIdx => {
+          if (year < currentYear || (year === currentYear && monthIdx <= currentMonth)) {
+            dataRows.push({
+              date: new Date(year, monthIdx, 1),
+              kegiatan: `Anggaran ${glAccount.description} Bulan ${MONTHS[monthIdx]}`,
+              budget: monthlyBudget, penggunaan: 0, isBudget: true
+            })
+          }
+        })
+        
+        // Transactions
+        glTransactions.forEach(t => {
+          dataRows.push({
+            date: t.tanggalKwitansi ? new Date(t.tanggalKwitansi) : new Date(t.tanggalEntry),
+            kegiatan: t.kegiatan, budget: 0, penggunaan: t.nilaiKwitansi, isBudget: false
+          })
+        })
+        
+        dataRows.sort((a, b) => a.date.getTime() - b.date.getTime())
+        
+        // Data rows
+        dataRows.forEach(d => {
+          const row = ws.getRow(currentRow)
+          row.getCell(1).value = rowNum++
+          row.getCell(1).alignment = { horizontal: 'center' }
+          row.getCell(2).value = format(d.date, 'dd-MM-yyyy')
+          row.getCell(3).value = d.kegiatan
+          
+          if (d.isBudget) {
+            row.getCell(4).value = d.budget
+            row.getCell(4).numFmt = '#,##0'
+            runningBudget += d.budget
+          } else {
+            row.getCell(5).value = d.penggunaan
+            row.getCell(5).numFmt = '#,##0'
+            totalPenggunaan += d.penggunaan
+          }
+          
+          row.getCell(6).value = runningBudget - totalPenggunaan
+          row.getCell(6).numFmt = '#,##0'
+          
+          for (let c = 1; c <= 6; c++) {
+            row.getCell(c).border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+          }
+          currentRow++
+        })
+        
+        // Sisa anggaran row with grey background - "Sisa anggaran" in col 3, totals in col 4,5,6
+        const sisaRow = ws.getRow(currentRow)
+        for (let c = 1; c <= 6; c++) {
+          sisaRow.getCell(c).border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+          sisaRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }
+        }
+        sisaRow.getCell(3).value = 'Sisa anggaran'
+        sisaRow.getCell(3).font = { bold: true }
+        sisaRow.getCell(3).alignment = { horizontal: 'right' }
+        sisaRow.getCell(4).value = runningBudget
+        sisaRow.getCell(4).numFmt = '#,##0'
+        sisaRow.getCell(4).font = { bold: true }
+        sisaRow.getCell(5).value = totalPenggunaan
+        sisaRow.getCell(5).numFmt = '#,##0'
+        sisaRow.getCell(5).font = { bold: true }
+        sisaRow.getCell(6).value = runningBudget - totalPenggunaan
+        sisaRow.getCell(6).numFmt = '#,##0'
+        sisaRow.getCell(6).font = { bold: true }
+        currentRow += 3
+        
+        // Signature - Yang Membuat (left) and Menyetujui (center col 4-6)
+        ws.getCell(currentRow, 1).value = 'Yang Membuat,'
+        ws.mergeCells(currentRow, 4, currentRow, 6)
+        ws.getCell(currentRow, 4).value = 'Menyetujui,'
+        ws.getCell(currentRow, 4).alignment = { horizontal: 'center' }
+        currentRow++
+        
+        ws.getCell(currentRow, 1).value = 'Pemegang Imprest Fund'
+        ws.mergeCells(currentRow, 4, currentRow, 6)
+        ws.getCell(currentRow, 4).value = 'Penanggung jawab Anggaran/Atasan Pemegang Imprst Fund'
+        ws.getCell(currentRow, 4).alignment = { horizontal: 'center' }
+        currentRow += 4
+        
+        ws.getCell(currentRow, 1).value = 'EVI CHRISTIANA'
+        ws.mergeCells(currentRow, 4, currentRow, 6)
+        ws.getCell(currentRow, 4).value = 'ISWANTORO'
+        ws.getCell(currentRow, 4).alignment = { horizontal: 'center' }
+        currentRow++
+        
+        ws.getCell(currentRow, 1).value = 'NIK: 700661'
+        ws.mergeCells(currentRow, 4, currentRow, 6)
+        ws.getCell(currentRow, 4).value = 'NIK: 720410'
+        ws.getCell(currentRow, 4).alignment = { horizontal: 'center' }
+        
+        currentRow += 5
+      }
+    }
+    
+    const buffer = await workbook.xlsx.writeBuffer()
+    saveAs(new Blob([buffer]), `KKA_${year}_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`)
   }
 
   const columns: ColumnDef<Transaction>[] = [
@@ -236,7 +554,7 @@ export default function TransactionPage() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-[1fr_100px_1fr_1fr] gap-4">
                   <div className="space-y-2">
                     <Label>GL Account</Label>
                     <Select value={selectedGl} onValueChange={setSelectedGl}>
@@ -252,10 +570,17 @@ export default function TransactionPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Regional</Label>
+                    <Label>Alokasi Regional</Label>
                     <Select value={regional} onValueChange={setRegional}>
                       <SelectTrigger><SelectValue placeholder="Pilih Regional" /></SelectTrigger>
                       <SelectContent>{regionals.map(r => <SelectItem key={r.id} value={r.code}>{r.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Jenis Pengadaan</Label>
+                    <Select value={jenisPengadaan} onValueChange={setJenisPengadaan}>
+                      <SelectTrigger><SelectValue placeholder="Pilih jenis" /></SelectTrigger>
+                      <SelectContent>{JENIS_PENGADAAN.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                 </div>
@@ -263,7 +588,7 @@ export default function TransactionPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2"><Label>Regional Pengguna</Label><Input value={regionalPengguna} onChange={e => setRegionalPengguna(e.target.value)} placeholder="Regional pengguna" required /></div>
                   <div className="space-y-2"><Label>Tanggal Kwitansi</Label><DatePicker date={tanggalKwitansi} onSelect={setTanggalKwitansi} placeholder="Pilih tanggal" /></div>
-                  <div className="space-y-2"><Label>Nilai Kwitansi (Rp)</Label><CurrencyInput value={nilaiKwitansi} onChange={setNilaiKwitansi} /></div>
+                  <div className="space-y-2"><Label>Nilai Kwitansi</Label><CurrencyInput value={nilaiKwitansi} onChange={setNilaiKwitansi} /></div>
                 </div>
                 <Button type="submit" disabled={isSubmitDisabled}>Simpan</Button>
                 {remaining !== null && remaining.remaining <= 0 && <p className="text-sm text-red-500 flex items-center gap-1"><AlertTriangle className="h-4 w-4" />Sisa anggaran 0</p>}
@@ -296,14 +621,114 @@ export default function TransactionPage() {
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-4">
-              <TabsTrigger value="all">Semua ({transactions.length})</TabsTrigger>
-              <TabsTrigger value="Open">Open ({openCount})</TabsTrigger>
-              <TabsTrigger value="Proses">Proses ({prosesCount})</TabsTrigger>
-              <TabsTrigger value="Close">Selesai ({closeCount})</TabsTrigger>
-            </TabsList>
+            <div className="flex items-center justify-between mb-4">
+              <TabsList>
+                <TabsTrigger value="all">Semua ({transactions.length})</TabsTrigger>
+                <TabsTrigger value="Open">Open ({openCount})</TabsTrigger>
+                <TabsTrigger value="Proses">Proses ({prosesCount})</TabsTrigger>
+                <TabsTrigger value="Close">Selesai ({closeCount})</TabsTrigger>
+              </TabsList>
+              
+              <div className="flex items-center gap-2">
+                {/* Search */}
+                <Input 
+                  placeholder="Cari kegiatan..." 
+                  className="w-[250px] h-9"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                />
+                
+                {/* Filter Button */}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2 h-9">
+                      <Filter className="h-4 w-4" />
+                      Filter
+                      {(filterGl || filterQuarter || filterRegional || filterPengadaan) && (
+                        <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                          {[filterGl, filterQuarter, filterRegional, filterPengadaan].filter(Boolean).length}
+                        </Badge>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80" align="end">
+                    <div className="space-y-4">
+                      <div className="font-medium text-sm">Filter Transaksi</div>
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">GL Account</Label>
+                          <Select value={filterGl || 'all'} onValueChange={v => setFilterGl(v === 'all' ? '' : v)}>
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Semua GL Account" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Semua GL Account</SelectItem>
+                              {glAccounts.map(gl => <SelectItem key={gl.id} value={gl.id}>{gl.code} - {gl.description}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Kuartal</Label>
+                          <Select value={filterQuarter || 'all'} onValueChange={v => setFilterQuarter(v === 'all' ? '' : v)}>
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Semua Kuartal" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Semua Kuartal</SelectItem>
+                              {[1,2,3,4].map(q => <SelectItem key={q} value={q.toString()}>Q{q}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Regional</Label>
+                          <Select value={filterRegional || 'all'} onValueChange={v => setFilterRegional(v === 'all' ? '' : v)}>
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Semua Regional" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Semua Regional</SelectItem>
+                              {regionals.map(r => <SelectItem key={r.id} value={r.code}>{r.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Jenis Pengadaan</Label>
+                          <Select value={filterPengadaan || 'all'} onValueChange={v => setFilterPengadaan(v === 'all' ? '' : v)}>
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Semua Pengadaan" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Semua Pengadaan</SelectItem>
+                              {JENIS_PENGADAAN.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      {(filterGl || filterQuarter || filterRegional || filterPengadaan) && (
+                        <Button size="sm" className="w-full" onClick={() => { setFilterGl(''); setFilterQuarter(''); setFilterRegional(''); setFilterPengadaan('') }}>
+                          Reset Filter
+                        </Button>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                {/* Export Button */}
+                <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white h-9 gap-2" onClick={handleExport}>
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Export
+                </Button>
+
+                {/* Export KKA Button */}
+                <Button size="sm" className="h-9 gap-2" onClick={handleExportKKA}>
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Export KKA
+                </Button>
+              </div>
+            </div>
+            
             <TabsContent value={activeTab}>
-              <DataTable columns={columns} data={filteredTransactions} searchKey="kegiatan" searchPlaceholder="Cari kegiatan..." />
+              <DataTable columns={columns} data={filteredTransactions} />
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -355,8 +780,11 @@ export default function TransactionPage() {
                     <Input value={viewingTransaction.tanggalKwitansi ? format(new Date(viewingTransaction.tanggalKwitansi), 'dd MMMM yyyy', { locale: idLocale }) : '-'} disabled className="bg-muted/50 font-medium" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-sm text-muted-foreground">Nilai Kwitansi (Rp)</Label>
-                    <Input value={viewingTransaction.nilaiKwitansi.toLocaleString('id-ID')} disabled className="bg-muted/50 font-medium text-blue-600" />
+                    <Label className="text-sm text-muted-foreground">Nilai Kwitansi</Label>
+                    <div className="flex">
+                      <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground text-sm">Rp</span>
+                      <Input value={viewingTransaction.nilaiKwitansi.toLocaleString('id-ID')} disabled className="bg-muted/50 font-medium rounded-l-none" />
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-sm text-muted-foreground">Jenis Pajak</Label>
@@ -367,12 +795,25 @@ export default function TransactionPage() {
                 {/* PPN Info */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label className="text-sm text-muted-foreground">Nilai Tanpa PPN (Rp)</Label>
-                    <Input value={viewingTransaction.nilaiTanpaPPN.toLocaleString('id-ID', { maximumFractionDigits: 0 })} disabled className="bg-muted/50 font-medium" />
+                    <Label className="text-sm text-muted-foreground">
+                      {viewingTransaction.jenisPajak === 'TanpaPPN' ? 'Nilai Non PPN' : 'Nilai Tanpa PPN'}
+                    </Label>
+                    <div className="flex">
+                      <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground text-sm">Rp</span>
+                      <Input value={viewingTransaction.nilaiTanpaPPN.toLocaleString('id-ID', { maximumFractionDigits: 0 })} disabled className="bg-muted/50 font-medium rounded-l-none" />
+                    </div>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-sm text-muted-foreground">Nilai PPN (Rp)</Label>
-                    <Input value={viewingTransaction.nilaiPPN.toLocaleString('id-ID', { maximumFractionDigits: 0 })} disabled className="bg-muted/50 font-medium" />
+                    <Label className="text-sm text-muted-foreground">
+                      {viewingTransaction.jenisPajak === 'TanpaPPN' ? 'Nilai Non PPN' : 
+                       viewingTransaction.jenisPajak === 'PPN11' ? 'Nilai PPN 11%' :
+                       viewingTransaction.jenisPajak === 'PPNJasa2' ? 'Nilai PPN 2%' :
+                       viewingTransaction.jenisPajak === 'PPNInklaring1.1' ? 'Nilai PPN 1.1%' : 'Nilai PPN'}
+                    </Label>
+                    <div className="flex">
+                      <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground text-sm">Rp</span>
+                      <Input value={viewingTransaction.nilaiPPN.toLocaleString('id-ID', { maximumFractionDigits: 0 })} disabled className="bg-muted/50 font-medium rounded-l-none" />
+                    </div>
                   </div>
                 </div>
 
@@ -403,7 +844,7 @@ export default function TransactionPage() {
                       <Input value={viewingTransaction.noTiketMydx || '-'} disabled className="bg-muted/50 font-medium" />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-sm text-muted-foreground">Tgl Serah Finance</Label>
+                      <Label className="text-sm text-muted-foreground">Tgl Serahkan ke Finance</Label>
                       <Input value={viewingTransaction.tglSerahFinance ? format(new Date(viewingTransaction.tglSerahFinance), 'dd MMMM yyyy', { locale: idLocale }) : '-'} disabled className="bg-muted/50 font-medium" />
                     </div>
                     <div className="space-y-1.5">
@@ -521,7 +962,7 @@ export default function TransactionPage() {
                   <DatePicker date={editTanggalKwitansi} onSelect={setEditTanggalKwitansi} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm text-muted-foreground">Nilai Kwitansi (Rp)</Label>
+                  <Label className="text-sm text-muted-foreground">Nilai Kwitansi</Label>
                   <CurrencyInput value={editNilaiKwitansi} onChange={setEditNilaiKwitansi} />
                 </div>
                 <div className="space-y-1.5">
@@ -533,12 +974,25 @@ export default function TransactionPage() {
               {/* PPN Info */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-sm text-muted-foreground">Nilai Tanpa PPN (Rp)</Label>
-                  <Input value={editPpnCalc.nilaiTanpaPPN.toLocaleString('id-ID', { maximumFractionDigits: 0 })} disabled className="bg-muted/50" />
+                  <Label className="text-sm text-muted-foreground">
+                    {editJenisPajak === 'TanpaPPN' ? 'Nilai Non PPN' : 'Nilai Tanpa PPN'}
+                  </Label>
+                  <div className="flex">
+                    <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground text-sm">Rp</span>
+                    <Input value={editPpnCalc.nilaiTanpaPPN.toLocaleString('id-ID', { maximumFractionDigits: 0 })} disabled className="bg-muted/50 rounded-l-none" />
+                  </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm text-muted-foreground">Nilai PPN (Rp)</Label>
-                  <Input value={editPpnCalc.nilaiPPN.toLocaleString('id-ID', { maximumFractionDigits: 0 })} disabled className="bg-muted/50" />
+                  <Label className="text-sm text-muted-foreground">
+                    {editJenisPajak === 'TanpaPPN' ? 'Nilai Non PPN' : 
+                     editJenisPajak === 'PPN11' ? 'Nilai PPN 11%' :
+                     editJenisPajak === 'PPNJasa2' ? 'Nilai PPN 2%' :
+                     editJenisPajak === 'PPNInklaring1.1' ? 'Nilai PPN 1.1%' : 'Nilai PPN'}
+                  </Label>
+                  <div className="flex">
+                    <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground text-sm">Rp</span>
+                    <Input value={editPpnCalc.nilaiPPN.toLocaleString('id-ID', { maximumFractionDigits: 0 })} disabled className="bg-muted/50 rounded-l-none" />
+                  </div>
                 </div>
               </div>
 
@@ -550,7 +1004,30 @@ export default function TransactionPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm text-muted-foreground">Vendor</Label>
-                  <Select value={editVendorId} onValueChange={setEditVendorId}><SelectTrigger><SelectValue placeholder="Pilih vendor" /></SelectTrigger><SelectContent>{vendors.map(v => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}</SelectContent></Select>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                        {editVendorId ? vendors.find(v => v.id === editVendorId)?.name : "Pilih vendor..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[300px] p-0">
+                      <Command>
+                        <CommandInput placeholder="Cari vendor..." />
+                        <CommandList>
+                          <CommandEmpty>Vendor tidak ditemukan.</CommandEmpty>
+                          <CommandGroup>
+                            {vendors.map(v => (
+                              <CommandItem key={v.id} value={v.name} onSelect={() => setEditVendorId(v.id)}>
+                                <Check className={cn("mr-2 h-4 w-4", editVendorId === v.id ? "opacity-100" : "opacity-0")} />
+                                {v.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
 
@@ -569,7 +1046,7 @@ export default function TransactionPage() {
                     <Input value={editNoTiketMydx} onChange={e => setEditNoTiketMydx(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-sm text-muted-foreground">Tgl Serah Finance</Label>
+                    <Label className="text-sm text-muted-foreground">Tgl Serahkan ke Finance</Label>
                     <DatePicker date={editTglSerahFinance} onSelect={setEditTglSerahFinance} />
                   </div>
                   <div className="space-y-1.5">
@@ -603,7 +1080,14 @@ export default function TransactionPage() {
               {/* Status */}
               <div className="flex items-center justify-between mb-6 pb-4 border-b">
                 <span className="text-sm font-semibold">Status</span>
-                <StatusBadge status="Proses" />
+                <StatusBadge status={
+                  // Check all fields and tasks for Close
+                  (editGl && editQuarter && editRegional && editKegiatan && editRegionalPengguna &&
+                   editTanggalKwitansi && editNilaiKwitansi > 0 && editJenisPajak && editJenisPengadaan &&
+                   editVendorId && editNoTiketMydx && editTglSerahFinance && editPicFinance && 
+                   editNoHpFinance && editTglTransferVendor && editNilaiTransfer &&
+                   editTaskTransferVendor && editTaskTerimaBerkas) ? 'Close' : 'Proses'
+                } />
               </div>
 
               {/* Task Checklist */}
