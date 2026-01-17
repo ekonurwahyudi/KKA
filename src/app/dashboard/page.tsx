@@ -43,6 +43,8 @@ export default function DashboardPage() {
   const [glAccountsCount, setGlAccountsCount] = useState(0)
   const [glAccounts, setGlAccounts] = useState<GlAccount[]>([])
   const [selectedGlAccount, setSelectedGlAccount] = useState<string>('all')
+  const [periodType, setPeriodType] = useState<'quarter' | 'month'>('quarter')
+  const [activeTab, setActiveTab] = useState<string>('q1')
 
   useEffect(() => {
     fetch('/api/gl-account').then((r) => r.json()).then((data) => {
@@ -73,6 +75,24 @@ export default function DashboardPage() {
       .filter(t => t.glAccountId === budget.glAccountId && t.quarter === quarter)
       .reduce((sum, t) => sum + t.nilaiKwitansi, 0)
     return { budget: qBudget, used: qUsed, remaining: qBudget - qUsed }
+  }
+
+  const getBudgetByMonth = (budget: Budget, month: number) => {
+    // Hitung anggaran per bulan (anggaran kuartal dibagi 3)
+    const quarter = Math.ceil((month + 1) / 3)
+    const qKey = `q${quarter}Amount` as 'q1Amount' | 'q2Amount' | 'q3Amount' | 'q4Amount'
+    const monthlyBudget = budget[qKey] / 3
+    
+    // Hitung penggunaan per bulan
+    const monthUsed = transactions
+      .filter(t => {
+        if (t.glAccountId !== budget.glAccountId || !t.tglSerahFinance) return false
+        const txDate = new Date(t.tglSerahFinance)
+        return txDate.getMonth() === month
+      })
+      .reduce((sum, t) => sum + t.nilaiKwitansi, 0)
+    
+    return { budget: monthlyBudget, used: monthUsed, remaining: monthlyBudget - monthUsed }
   }
 
   // Data untuk monitoring chart
@@ -208,67 +228,157 @@ export default function DashboardPage() {
 
       <Card className="border">
         <CardHeader>
-          <CardTitle>Ringkasan Anggaran per GL Account</CardTitle>
-          <CardDescription>Detail penggunaan anggaran per kuartal tahun {year}</CardDescription>
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle>Ringkasan Anggaran per GL Account</CardTitle>
+              <CardDescription>Detail penggunaan anggaran per {periodType === 'quarter' ? 'kuartal' : 'bulan'} tahun {year}</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm text-muted-foreground">Filter:</Label>
+              <Select value={periodType} onValueChange={(v: 'quarter' | 'month') => {
+                setPeriodType(v)
+                setActiveTab(v === 'quarter' ? 'q1' : 'jan')
+              }}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="quarter">Kuartal</SelectItem>
+                  <SelectItem value="month">Bulan</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="q1">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="q1">Q1</TabsTrigger>
-              <TabsTrigger value="q2">Q2</TabsTrigger>
-              <TabsTrigger value="q3">Q3</TabsTrigger>
-              <TabsTrigger value="q4">Q4</TabsTrigger>
-            </TabsList>
-            {[1, 2, 3, 4].map((q) => (
-              <TabsContent key={q} value={`q${q}`}>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>GL Account</TableHead>
-                      <TableHead>Deskripsi</TableHead>
-                      <TableHead className="text-right">Anggaran Q{q} (Rp)</TableHead>
-                      <TableHead className="text-right">Terpakai (Rp)</TableHead>
-                      <TableHead className="text-right">Sisa (Rp)</TableHead>
-                      <TableHead className="text-center">Outlook</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {budgets.map((budget) => {
-                      const data = getBudgetByQuarter(budget, q)
-                      const outlook = data.budget > 0 ? (data.used / data.budget) * 100 : 0
-                      return (
-                        <TableRow key={budget.id}>
-                          <TableCell className="font-medium">{budget.glAccount.code}</TableCell>
-                          <TableCell>{budget.glAccount.description}</TableCell>
-                          <TableCell className="text-right">{data.budget.toLocaleString('id-ID')}</TableCell>
-                          <TableCell className="text-right text-red-600">{data.used.toLocaleString('id-ID')}</TableCell>
-                          <TableCell className={`text-right font-semibold ${data.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {data.remaining.toLocaleString('id-ID')}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                              outlook >= 80 ? 'bg-green-100 text-green-600' : 
-                              outlook >= 40 ? 'bg-yellow-100 text-yellow-600' : 
-                              'bg-red-100 text-red-600'
-                            }`}>
-                              {outlook.toFixed(1)}%
-                            </span>
+          {periodType === 'quarter' ? (
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="q1">Q1</TabsTrigger>
+                <TabsTrigger value="q2">Q2</TabsTrigger>
+                <TabsTrigger value="q3">Q3</TabsTrigger>
+                <TabsTrigger value="q4">Q4</TabsTrigger>
+              </TabsList>
+              {[1, 2, 3, 4].map((q) => (
+                <TabsContent key={q} value={`q${q}`}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>GL Account</TableHead>
+                        <TableHead>Deskripsi</TableHead>
+                        <TableHead className="text-right">Anggaran Q{q} (Rp)</TableHead>
+                        <TableHead className="text-right">Terpakai (Rp)</TableHead>
+                        <TableHead className="text-right">Sisa (Rp)</TableHead>
+                        <TableHead className="text-center">Outlook</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {budgets.map((budget) => {
+                        const data = getBudgetByQuarter(budget, q)
+                        const outlook = data.budget > 0 ? (data.used / data.budget) * 100 : 0
+                        return (
+                          <TableRow key={budget.id}>
+                            <TableCell className="font-medium">{budget.glAccount.code}</TableCell>
+                            <TableCell>{budget.glAccount.description}</TableCell>
+                            <TableCell className="text-right">{data.budget.toLocaleString('id-ID')}</TableCell>
+                            <TableCell className="text-right text-red-600">{data.used.toLocaleString('id-ID')}</TableCell>
+                            <TableCell className={`text-right font-semibold ${data.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {data.remaining.toLocaleString('id-ID')}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                                outlook >= 80 ? 'bg-green-100 text-green-600' : 
+                                outlook >= 40 ? 'bg-yellow-100 text-yellow-600' : 
+                                'bg-red-100 text-red-600'
+                              }`}>
+                                {outlook.toFixed(1)}%
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                      {budgets.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                            Belum ada data anggaran. Silakan input anggaran terlebih dahulu.
                           </TableCell>
                         </TableRow>
-                      )
-                    })}
-                    {budgets.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          Belum ada data anggaran. Silakan input anggaran terlebih dahulu.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </TabsContent>
-            ))}
-          </Tabs>
+                      )}
+                    </TableBody>
+                  </Table>
+                </TabsContent>
+              ))}
+            </Tabs>
+          ) : (
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid w-full grid-cols-12 h-auto">
+                <TabsTrigger value="jan" className="text-xs">Jan</TabsTrigger>
+                <TabsTrigger value="feb" className="text-xs">Feb</TabsTrigger>
+                <TabsTrigger value="mar" className="text-xs">Mar</TabsTrigger>
+                <TabsTrigger value="apr" className="text-xs">Apr</TabsTrigger>
+                <TabsTrigger value="mei" className="text-xs">Mei</TabsTrigger>
+                <TabsTrigger value="jun" className="text-xs">Jun</TabsTrigger>
+                <TabsTrigger value="jul" className="text-xs">Jul</TabsTrigger>
+                <TabsTrigger value="agu" className="text-xs">Agu</TabsTrigger>
+                <TabsTrigger value="sep" className="text-xs">Sep</TabsTrigger>
+                <TabsTrigger value="okt" className="text-xs">Okt</TabsTrigger>
+                <TabsTrigger value="nov" className="text-xs">Nov</TabsTrigger>
+                <TabsTrigger value="des" className="text-xs">Des</TabsTrigger>
+              </TabsList>
+              {['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'].map((monthKey, monthIndex) => {
+                const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+                return (
+                  <TabsContent key={monthKey} value={monthKey}>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>GL Account</TableHead>
+                          <TableHead>Deskripsi</TableHead>
+                          <TableHead className="text-right">Anggaran {monthNames[monthIndex]} (Rp)</TableHead>
+                          <TableHead className="text-right">Terpakai (Rp)</TableHead>
+                          <TableHead className="text-right">Sisa (Rp)</TableHead>
+                          <TableHead className="text-center">Outlook</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {budgets.map((budget) => {
+                          const data = getBudgetByMonth(budget, monthIndex)
+                          const outlook = data.budget > 0 ? (data.used / data.budget) * 100 : 0
+                          return (
+                            <TableRow key={budget.id}>
+                              <TableCell className="font-medium">{budget.glAccount.code}</TableCell>
+                              <TableCell>{budget.glAccount.description}</TableCell>
+                              <TableCell className="text-right">{data.budget.toLocaleString('id-ID')}</TableCell>
+                              <TableCell className="text-right text-red-600">{data.used.toLocaleString('id-ID')}</TableCell>
+                              <TableCell className={`text-right font-semibold ${data.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {data.remaining.toLocaleString('id-ID')}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                                  outlook >= 80 ? 'bg-green-100 text-green-600' : 
+                                  outlook >= 40 ? 'bg-yellow-100 text-yellow-600' : 
+                                  'bg-red-100 text-red-600'
+                                }`}>
+                                  {outlook.toFixed(1)}%
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                        {budgets.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                              Belum ada data anggaran. Silakan input anggaran terlebih dahulu.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TabsContent>
+                )
+              })}
+            </Tabs>
+          )}
         </CardContent>
       </Card>
 
