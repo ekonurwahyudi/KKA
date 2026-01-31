@@ -20,9 +20,10 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
-import { Wallet, TrendingUp, TrendingDown, CheckCircle, Pencil, Trash2, AlertTriangle, Eye, Check, ChevronsUpDown, BookOpen, Hourglass, Filter, FileSpreadsheet } from 'lucide-react'
+import { Wallet, TrendingUp, TrendingDown, CheckCircle, Pencil, Trash2, AlertTriangle, Eye, Check, ChevronsUpDown, BookOpen, Hourglass, Filter, FileSpreadsheet, FileText, File, Image, Presentation } from 'lucide-react'
 import { CurrencyInput } from '@/components/ui/currency-input'
 import { cn } from '@/lib/utils'
+import { TableSkeleton } from '@/components/loading'
 
 interface GlAccount { id: string; code: string; description: string }
 interface Regional { id: string; code: string; name: string }
@@ -48,11 +49,11 @@ interface Transaction {
 
 const JENIS_PAJAK = [
   { value: 'TanpaPPN', label: 'Non-PPN' }, { value: 'PPN11', label: 'PPN 11%' },
-  { value: 'PPNJasa2', label: 'PPN Jasa 2%' }, { value: 'PPNInklaring1.1', label: 'PPN Inklaring 1.1%' },
+  { value: 'PPNJasa2', label: 'PPH Jasa 2%' }, { value: 'PPNInklaring1.1', label: 'Inklaring 1.1%' },
 ]
 const JENIS_PENGADAAN = [
-  { value: 'PadiUMKM', label: 'PadiUMKM' }, { value: 'InpresFund', label: 'Inpres Fund' },
-  { value: 'Nopes', label: 'Nopes' }, { value: 'Lainnya', label: 'Lainnya' },
+  { value: 'PadiUMKM', label: 'PadiUMKM' }, { value: 'InpresFund', label: 'Impress Fund' },
+  { value: 'Nopes', label: 'Nopes' }, { value: 'SPPD', label: 'SPPD' }, { value: 'Lainnya', label: 'Lainnya' },
 ]
 
 function calculatePPN(nilaiKwitansi: number, jenisPajak: string) {
@@ -89,6 +90,7 @@ export default function TransactionPage() {
   const [message, setMessage] = useState('')
   const [activeTab, setActiveTab] = useState('all')
   const [picAnggaran, setPicAnggaran] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
   
   // Filter states
   const [filterGl, setFilterGl] = useState('')
@@ -135,11 +137,25 @@ export default function TransactionPage() {
   const [editNilaiTransfer, setEditNilaiTransfer] = useState<number | undefined>()
   const [editTaskTransferVendor, setEditTaskTransferVendor] = useState(false)
   const [editTaskTerimaBerkas, setEditTaskTerimaBerkas] = useState(false)
+  
+  // File upload states
+  const [files, setFiles] = useState<any[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/gl-account').then(r => r.json()).then(setGlAccounts)
-    fetch('/api/regional').then(r => r.json()).then(data => { setRegionals(data); if (data.length > 0) setRegional(data[0].code) })
-    fetch('/api/vendor').then(r => r.json()).then(setVendors)
+    setLoading(true)
+    Promise.all([
+      fetch('/api/gl-account').then(r => r.json()),
+      fetch('/api/regional').then(r => r.json()),
+      fetch('/api/vendor').then(r => r.json())
+    ]).then(([glData, regionalData, vendorData]) => {
+      setGlAccounts(glData)
+      setRegionals(regionalData)
+      setVendors(vendorData)
+      if (regionalData.length > 0) setRegional(regionalData[0].code)
+      setLoading(false)
+    })
   }, [])
 
   useEffect(() => { loadTransactions() }, [year])
@@ -153,7 +169,15 @@ export default function TransactionPage() {
         }
       })
   }, [year])
-  const loadTransactions = () => { fetch(`/api/transaction?year=${year}`).then(r => r.json()).then(setTransactions) }
+  const loadTransactions = () => { 
+    setLoading(true)
+    fetch(`/api/transaction?year=${year}`)
+      .then(r => r.json())
+      .then(data => {
+        setTransactions(data)
+        setLoading(false)
+      })
+  }
 
   useEffect(() => {
     if (selectedGl && regional) {
@@ -194,7 +218,11 @@ export default function TransactionPage() {
     loadTransactions(); setTimeout(() => setMessage(''), 3000)
   }
 
-  const openViewDialog = (t: Transaction) => { setViewingTransaction(t); setShowViewDialog(true) }
+  const openViewDialog = (t: Transaction) => { 
+    setViewingTransaction(t); 
+    loadTransactionFiles(t.id);
+    setShowViewDialog(true) 
+  }
 
   const openEditDialog = (t: Transaction) => {
     setEditingTransaction(t)
@@ -208,7 +236,184 @@ export default function TransactionPage() {
     setEditPicFinance(t.picFinance || ''); setEditNoHpFinance(t.noHpFinance || '')
     setEditTglTransferVendor(t.tglTransferVendor ? new Date(t.tglTransferVendor) : undefined)
     setEditNilaiTransfer(t.nilaiTransfer); setEditTaskTransferVendor(t.taskTransferVendor); setEditTaskTerimaBerkas(t.taskTerimaBerkas)
+    
+    // Load files for this transaction
+    loadTransactionFiles(t.id)
+    
     setShowEditDialog(true)
+  }
+
+  const loadTransactionFiles = async (transactionId: string) => {
+    try {
+      const response = await fetch(`/api/transaction/${transactionId}/files`)
+      if (response.ok) {
+        const filesData = await response.json()
+        setFiles(filesData)
+      }
+    } catch (error) {
+      console.error('Error loading files:', error)
+    }
+  }
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = event.target.files
+    if (!selectedFiles || !editingTransaction) return
+
+    setUploading(true)
+    
+    try {
+      for (const file of Array.from(selectedFiles)) {
+        // Check file size (10MB limit)
+        if (file.size > 10 * 1024 * 1024) {
+          setMessage(`File ${file.name} terlalu besar (max 10MB)`)
+          setTimeout(() => setMessage(''), 3000)
+          continue
+        }
+
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const response = await fetch(`/api/transaction/${editingTransaction.id}/files`, {
+          method: 'POST',
+          body: formData
+        })
+
+        if (response.ok) {
+          const newFile = await response.json()
+          setFiles(prev => [newFile, ...prev])
+        } else {
+          const error = await response.json()
+          setMessage(`Gagal upload ${file.name}: ${error.error}`)
+          setTimeout(() => setMessage(''), 3000)
+        }
+      }
+      
+      if (selectedFiles.length > 0) {
+        setMessage('File berhasil diupload!')
+        setTimeout(() => setMessage(''), 3000)
+      }
+    } catch (error) {
+      console.error('Error uploading files:', error)
+      setMessage('Terjadi kesalahan saat upload file')
+      setTimeout(() => setMessage(''), 3000)
+    } finally {
+      setUploading(false)
+      // Reset file input
+      event.target.value = ''
+    }
+  }
+
+  const handleDeleteFile = async (fileId: string) => {
+    if (!editingTransaction) return
+
+    try {
+      const response = await fetch(`/api/transaction/${editingTransaction.id}/files?fileId=${fileId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        setFiles(prev => prev.filter(f => f.id !== fileId))
+        setMessage('File berhasil dihapus!')
+        setTimeout(() => setMessage(''), 3000)
+      } else {
+        const error = await response.json()
+        setMessage(`Gagal hapus file: ${error.error}`)
+        setTimeout(() => setMessage(''), 3000)
+      }
+    } catch (error) {
+      console.error('Error deleting file:', error)
+      setMessage('Terjadi kesalahan saat hapus file')
+      setTimeout(() => setMessage(''), 3000)
+    }
+  }
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes >= 1024 * 1024) {
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+    } else if (bytes >= 1024) {
+      return (bytes / 1024).toFixed(1) + ' KB'
+    } else {
+      return bytes + ' B'
+    }
+  }
+
+  const handleFilePreview = (file: any) => {
+    if (file.mimeType.includes('image')) {
+      setPreviewImage(file.filePath)
+    } else {
+      window.open(file.filePath, '_blank')
+    }
+  }
+
+  const getFileIcon = (file: any) => {
+    const mimeType = file.mimeType.toLowerCase()
+    const fileName = file.originalName.toLowerCase()
+    
+    // Image files - show thumbnail
+    if (mimeType.includes('image')) {
+      return (
+        <div className="w-10 h-10 rounded overflow-hidden border">
+          <img 
+            src={file.filePath} 
+            alt={file.originalName}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              // Fallback to icon if image fails to load
+              e.currentTarget.style.display = 'none'
+              e.currentTarget.nextElementSibling.style.display = 'flex'
+            }}
+          />
+          <div className="w-10 h-10 bg-blue-100 rounded flex items-center justify-center" style={{display: 'none'}}>
+            <Image className="h-5 w-5 text-blue-600" />
+          </div>
+        </div>
+      )
+    }
+    
+    // PDF files - red
+    if (mimeType.includes('pdf')) {
+      return (
+        <div className="w-10 h-10 bg-red-100 rounded flex items-center justify-center">
+          <FileText className="h-5 w-5 text-red-600" />
+        </div>
+      )
+    }
+    
+    // Excel files - green
+    if (mimeType.includes('excel') || mimeType.includes('spreadsheet') || 
+        fileName.endsWith('.xls') || fileName.endsWith('.xlsx')) {
+      return (
+        <div className="w-10 h-10 bg-green-100 rounded flex items-center justify-center">
+          <FileSpreadsheet className="h-5 w-5 text-green-600" />
+        </div>
+      )
+    }
+    
+    // PowerPoint files - orange
+    if (mimeType.includes('presentation') || fileName.endsWith('.ppt') || fileName.endsWith('.pptx')) {
+      return (
+        <div className="w-10 h-10 bg-orange-100 rounded flex items-center justify-center">
+          <Presentation className="h-5 w-5 text-orange-600" />
+        </div>
+      )
+    }
+    
+    // Word documents - blue
+    if (mimeType.includes('word') || mimeType.includes('document') || 
+        fileName.endsWith('.doc') || fileName.endsWith('.docx')) {
+      return (
+        <div className="w-10 h-10 bg-blue-100 rounded flex items-center justify-center">
+          <FileText className="h-5 w-5 text-blue-600" />
+        </div>
+      )
+    }
+    
+    // Default file - gray
+    return (
+      <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center">
+        <File className="h-5 w-5 text-gray-600" />
+      </div>
+    )
   }
 
   const handleEdit = async () => {
@@ -546,6 +751,10 @@ export default function TransactionPage() {
 
   const isSubmitDisabled = !selectedGl || !regional || (remaining !== null && remaining.remaining <= 0)
 
+  if (loading) {
+    return <TableSkeleton title="Pencatatan Transaksi" showFilters={true} showActions={true} rows={8} columns={7} />
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -823,8 +1032,8 @@ export default function TransactionPage() {
                     <Label className="text-sm text-muted-foreground">
                       {viewingTransaction.jenisPajak === 'TanpaPPN' ? 'Nilai Non PPN' : 
                        viewingTransaction.jenisPajak === 'PPN11' ? 'Nilai PPN 11%' :
-                       viewingTransaction.jenisPajak === 'PPNJasa2' ? 'Nilai PPN 2%' :
-                       viewingTransaction.jenisPajak === 'PPNInklaring1.1' ? 'Nilai PPN 1.1%' : 'Nilai PPN'}
+                       viewingTransaction.jenisPajak === 'PPNJasa2' ? 'Nilai PPH Jasa 2%' :
+                       viewingTransaction.jenisPajak === 'PPNInklaring1.1' ? 'Nilai Inklaring 1.1%' : 'Nilai PPN'}
                     </Label>
                     <div className="flex">
                       <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground text-sm">Rp</span>
@@ -927,6 +1136,54 @@ export default function TransactionPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* File Display Section */}
+                <div className="space-y-4 pt-4 border-t">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">Lampiran File</p>
+                    {files.length > 0 && (
+                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                        {files.length} file{files.length > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {files.length === 0 ? (
+                    <div className="text-center py-6 bg-gray-50/50 rounded-lg border border-dashed border-gray-300">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                          <FileText className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <p className="text-xs text-muted-foreground">Belum ada file</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {files.map((file) => (
+                        <div key={file.id} className="group flex items-center gap-2 p-2 bg-white/50 border rounded-lg hover:bg-white hover:shadow-sm transition-all duration-200">
+                          <div className="flex-shrink-0">
+                            {getFileIcon(file)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">{file.originalName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatFileSize(file.fileSize)}
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleFilePreview(file)}
+                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title={file.mimeType.includes('image') ? 'Preview gambar' : 'Lihat file'}
+                          >
+                            <Eye className="h-3 w-3 text-blue-600" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1002,8 +1259,8 @@ export default function TransactionPage() {
                   <Label className="text-sm text-muted-foreground">
                     {editJenisPajak === 'TanpaPPN' ? 'Nilai Non PPN' : 
                      editJenisPajak === 'PPN11' ? 'Nilai PPN 11%' :
-                     editJenisPajak === 'PPNJasa2' ? 'Nilai PPN 2%' :
-                     editJenisPajak === 'PPNInklaring1.1' ? 'Nilai PPN 1.1%' : 'Nilai PPN'}
+                     editJenisPajak === 'PPNJasa2' ? 'Nilai PPH Jasa 2%' :
+                     editJenisPajak === 'PPNInklaring1.1' ? 'Nilai Inklaring 1.1%' : 'Nilai PPN'}
                   </Label>
                   <div className="flex">
                     <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground text-sm">Rp</span>
@@ -1136,6 +1393,87 @@ export default function TransactionPage() {
                   </div>
                 </div>
               </div>
+
+              {/* File Upload Section */}
+              <div className="space-y-4 pt-4 border-t">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold">Lampiran File</p>
+                  {files.length > 0 && (
+                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                      {files.length} file{files.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+                
+                {/* Upload Form */}
+                <div className="space-y-2">
+                  <Input
+                    type="file"
+                    multiple
+                    onChange={handleFileUpload}
+                    disabled={uploading}
+                    className="text-xs h-8"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.bmp,.webp"
+                  />
+                  {uploading && (
+                    <div className="flex items-center gap-2 text-xs text-blue-600">
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                      Uploading...
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    PDF, DOC, XLS, PPT, JPG, PNG (Max 10MB)
+                  </p>
+                </div>
+
+                {/* File List */}
+                {files.length === 0 ? (
+                  <div className="text-center py-4 bg-gray-50/50 rounded-lg border border-dashed border-gray-300">
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
+                        <FileText className="h-4 w-4 text-gray-400" />
+                      </div>
+                      <p className="text-xs text-muted-foreground">Belum ada file</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {files.map((file) => (
+                      <div key={file.id} className="group flex items-center gap-2 p-2 bg-white/50 border rounded-lg hover:bg-white hover:shadow-sm transition-all duration-200">
+                        <div className="flex-shrink-0">
+                          {getFileIcon(file)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{file.originalName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatFileSize(file.fileSize)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleFilePreview(file)}
+                            className="h-6 w-6 p-0"
+                            title={file.mimeType.includes('image') ? 'Preview gambar' : 'Lihat file'}
+                          >
+                            <Eye className="h-3 w-3 text-blue-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteFile(file.id)}
+                            className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                            title="Hapus file"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </DialogContent>
@@ -1148,6 +1486,45 @@ export default function TransactionPage() {
           <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-red-500 hover:bg-red-600">Hapus</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Image Preview Modal */}
+      <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+          <DialogHeader className="px-6 pt-6 pb-2">
+            <DialogTitle>Preview Gambar</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6">
+            {previewImage && (
+              <div className="flex justify-center">
+                <img 
+                  src={previewImage} 
+                  alt="Preview" 
+                  className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg"
+                  onError={() => {
+                    setMessage('Gagal memuat gambar')
+                    setTimeout(() => setMessage(''), 3000)
+                    setPreviewImage(null)
+                  }}
+                />
+              </div>
+            )}
+            <div className="flex justify-center gap-2 mt-4">
+              <Button
+                variant="outline"
+                onClick={() => setPreviewImage(null)}
+              >
+                Tutup
+              </Button>
+              <Button
+                onClick={() => window.open(previewImage!, '_blank')}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Buka di Tab Baru
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

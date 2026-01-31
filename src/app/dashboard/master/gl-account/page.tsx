@@ -11,6 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Plus, Pencil, Trash2, CheckCircle } from 'lucide-react'
+import { TableSkeleton } from '@/components/loading'
 
 interface GlAccount {
   id: string
@@ -30,13 +31,20 @@ export default function GlAccountPage() {
   const [keterangan, setKeterangan] = useState('')
   const [isActive, setIsActive] = useState(true)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadData()
   }, [])
 
   const loadData = () => {
-    fetch('/api/gl-account?includeInactive=true').then((r) => r.json()).then(setGlAccounts)
+    setLoading(true)
+    fetch('/api/gl-account?includeInactive=true')
+      .then((r) => r.json())
+      .then(data => {
+        setGlAccounts(data)
+        setLoading(false)
+      })
   }
 
   const openDialog = (item?: GlAccount) => {
@@ -117,6 +125,10 @@ export default function GlAccountPage() {
       ),
     },
   ]
+
+  if (loading) {
+    return <TableSkeleton title="Master GL Account" showFilters={false} showActions={true} rows={6} columns={5} />
+  }
 
   return (
     <div className="space-y-6">

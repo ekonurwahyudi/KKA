@@ -12,6 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CurrencyInput } from '@/components/ui/currency-input'
 import { Calculator, Settings, Pencil, Trash2, CheckCircle, Percent, RotateCcw, Upload, Download, X } from 'lucide-react'
+import { FormSkeleton } from '@/components/loading'
 
 interface GlAccount { id: string; code: string; description: string; keterangan: string }
 interface Regional { id: string; code: string; name: string }
@@ -47,6 +48,7 @@ export default function BudgetPage() {
   const [editQuarters, setEditQuarters] = useState({ q1: 0, q2: 0, q3: 0, q4: 0 })
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [loading, setLoading] = useState(true)
 
   // Auto calculate totalAmount when rkap or releasePercent changes
   useEffect(() => {
@@ -59,12 +61,27 @@ export default function BudgetPage() {
   }, [editRkap, editReleasePercent])
 
   useEffect(() => {
-    fetch('/api/gl-account').then(r => r.json()).then(setGlAccounts)
-    fetch('/api/regional').then(r => r.json()).then(setRegionals)
+    setLoading(true)
+    Promise.all([
+      fetch('/api/gl-account').then(r => r.json()),
+      fetch('/api/regional').then(r => r.json())
+    ]).then(([glData, regionalData]) => {
+      setGlAccounts(glData)
+      setRegionals(regionalData)
+      setLoading(false)
+    })
   }, [])
 
   useEffect(() => { loadBudgets() }, [year])
-  const loadBudgets = () => { fetch(`/api/budget?year=${year}`).then(r => r.json()).then(setBudgets) }
+  const loadBudgets = () => { 
+    setLoading(true)
+    fetch(`/api/budget?year=${year}`)
+      .then(r => r.json())
+      .then(data => {
+        setBudgets(data)
+        setLoading(false)
+      })
+  }
 
   const autoSplitQuarters = () => {
     const perQuarter = Math.floor(totalAmount / 4)
@@ -269,6 +286,10 @@ export default function BudgetPage() {
       </div>
     )},
   ]
+
+  if (loading) {
+    return <FormSkeleton title="Input Anggaran Tahunan" fields={8} showTabs={true} tabCount={4} />
+  }
 
   return (
     <div className="space-y-6">

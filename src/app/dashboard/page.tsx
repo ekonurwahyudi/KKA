@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Wallet, TrendingDown, FileText, Clock } from 'lucide-react'
 import { ChartRadial } from '@/components/ui/chart-radial'
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig, ChartLegend, ChartLegendContent } from '@/components/ui/chart'
+import { ChartContainer, ChartTooltip, type ChartConfig, ChartLegend, ChartLegendContent } from '@/components/ui/chart'
+import { DashboardSkeleton } from '@/components/loading'
 
 interface GlAccount {
   id: string
@@ -34,6 +35,8 @@ interface Transaction {
   nilaiKwitansi: number
   tglSerahFinance: string | null
   glAccount?: GlAccount
+  jenisPengadaan?: string
+  regionalPengguna?: string
 }
 
 export default function DashboardPage() {
@@ -45,17 +48,27 @@ export default function DashboardPage() {
   const [selectedGlAccount, setSelectedGlAccount] = useState<string>('all')
   const [periodType, setPeriodType] = useState<'quarter' | 'month'>('quarter')
   const [activeTab, setActiveTab] = useState<string>('q1')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    setLoading(true)
     fetch('/api/gl-account').then((r) => r.json()).then((data) => {
       setGlAccountsCount(data.length)
       setGlAccounts(data)
+      setLoading(false)
     })
   }, [])
 
   useEffect(() => {
-    fetch(`/api/budget?year=${year}`).then((r) => r.json()).then(setBudgets)
-    fetch(`/api/transaction?year=${year}`).then((r) => r.json()).then(setTransactions)
+    setLoading(true)
+    Promise.all([
+      fetch(`/api/budget?year=${year}`).then((r) => r.json()),
+      fetch(`/api/transaction?year=${year}`).then((r) => r.json())
+    ]).then(([budgetData, transactionData]) => {
+      setBudgets(budgetData)
+      setTransactions(transactionData)
+      setLoading(false)
+    })
   }, [year])
 
   const totalBudget = budgets.reduce((sum, b) => sum + b.totalAmount, 0)
@@ -130,6 +143,48 @@ export default function DashboardPage() {
       color: "#22c55e",
     },
   } satisfies ChartConfig
+
+  // Helper function untuk format angka Indonesia
+  const formatCurrency = (value: number): string => {
+    if (value >= 1000000000) {
+      return (value / 1000000000).toFixed(1) + 'M' // Miliar
+    } else if (value >= 1000000) {
+      return (value / 1000000).toFixed(1) + 'Jt' // Juta
+    } else if (value >= 1000) {
+      return (value / 1000).toFixed(1) + 'K' // Ribu
+    }
+    return value.toString()
+  }
+
+  // Data untuk monitoring SPPD per Regional Pengguna
+  const getSPPDData = () => {
+    const sppdTransactions = transactions.filter(t => t.jenisPengadaan === 'SPPD')
+    console.log('SPPD Transactions:', sppdTransactions.length)
+    
+    // Group by regionalPengguna
+    const regionalData: Record<string, number> = {}
+    
+    sppdTransactions.forEach(t => {
+      const regional = t.regionalPengguna || 'Tidak Diketahui'
+      if (!regionalData[regional]) {
+        regionalData[regional] = 0
+      }
+      regionalData[regional] += t.nilaiKwitansi
+    })
+    
+    // Convert to array format for chart
+    const result = Object.entries(regionalData).map(([regional, total]) => ({
+      regional,
+      total
+    })).sort((a, b) => b.total - a.total) // Sort by total descending
+    
+    console.log('SPPD Data:', result)
+    return result
+  }
+
+  if (loading) {
+    return <DashboardSkeleton />
+  }
 
   return (
     <div className="space-y-6">
@@ -467,7 +522,7 @@ export default function DashboardPage() {
                         const isJumlah = item.dataKey === 'jumlahPencatatan'
                         const displayValue = isJumlah 
                           ? `(${item.value})`
-                          : `(Rp. ${Number(item.value).toLocaleString('id-ID')})`
+                          : `(Rp. ${formatCurrency(item.value)})`
                         const displayName = isJumlah ? 'Jumlah Pencatatan' : 'Total Pengeluaran'
                         
                         return (
@@ -522,11 +577,49 @@ export default function DashboardPage() {
                   position: 'top',
                   fill: '#22c55e',
                   fontSize: 11,
-                  formatter: (value: any) => value > 0 ? `${(value / 1000000).toFixed(1)}M` : ''
+                  formatter: (value: any) => value > 0 ? formatCurrency(value) : ''
                 }}
               />
             </LineChart>
           </ChartContainer>
+        </CardContent>
+      </Card>
+
+      {/* Monitoring SPPD per Regional Pengguna */}
+      <Card className="border">
+        <CardHeader>
+          <CardTitle>Monitoring SPPD HO TIF DEFA</CardTitle>
+          <CardDescription>Total penggunaan SPPD berdasarkan Anggaran DEFA {year}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {getSPPDData().length > 0 ? (
+            <div className="space-y-3">
+              {getSPPDData().map((item, index) => {
+                const maxValue = Math.max(...getSPPDData().map(d => d.total))
+                const percentage = (item.total / maxValue) * 100
+                
+                return (
+                  <div key={index} className="flex items-center gap-3">
+                    <div className="relative flex-1">
+                      <div 
+                        className="bg-blue-500 text-white px-4 py-3 rounded-lg flex items-center justify-between"
+                        style={{ width: `${Math.max(percentage, 20)}%` }}
+                      >
+                        <span className="font-medium text-sm">{item.regional}</span>
+                      </div>
+                    </div>
+                    <div className="text-gray-700 font-semibold text-sm min-w-[60px] text-right">
+                      {formatCurrency(item.total)}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="h-[400px] flex items-center justify-center text-muted-foreground">
+              Tidak ada data SPPD untuk tahun {year}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

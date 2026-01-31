@@ -26,6 +26,8 @@ model GlAccount {
   updatedAt   DateTime @updatedAt
   budgets     Budget[]
   transactions Transaction[]
+  monthlyAllocations MonthlyAllocation[]
+  imprestItems ImprestItem[]
 }
 
 model Regional {
@@ -128,6 +130,9 @@ model Transaction {
   
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+  
+  // File attachments
+  files             TransactionFile[]
 }
 
 model PicAnggaran {
@@ -143,4 +148,62 @@ model PicAnggaran {
   updatedAt             DateTime @updatedAt
 
   @@unique([unit, year])
+}
+
+model MonthlyAllocation {
+  id          String    @id @default(cuid())
+  glAccountId String
+  glAccount   GlAccount @relation(fields: [glAccountId], references: [id])
+  year        Int
+  janAmount   Float     @default(0)
+  febAmount   Float     @default(0)
+  marAmount   Float     @default(0)
+  aprAmount   Float     @default(0)
+  mayAmount   Float     @default(0)
+  junAmount   Float     @default(0)
+  julAmount   Float     @default(0)
+  augAmount   Float     @default(0)
+  sepAmount   Float     @default(0)
+  octAmount   Float     @default(0)
+  novAmount   Float     @default(0)
+  decAmount   Float     @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([glAccountId, year])
+}
+
+model TransactionFile {
+  id            String      @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  fileName      String
+  originalName  String
+  fileSize      Int
+  mimeType      String
+  filePath      String
+  uploadedAt    DateTime    @default(now())
+}
+
+model ImprestFund {
+  id               String        @id @default(cuid())
+  kelompokKegiatan String
+  status           String        @default("draft") // draft, proses, close
+  totalAmount      Float         @default(0)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  items            ImprestItem[]
+}
+
+model ImprestItem {
+  id            String      @id @default(cuid())
+  imprestFundId String
+  imprestFund   ImprestFund @relation(fields: [imprestFundId], references: [id], onDelete: Cascade)
+  tanggal       DateTime
+  uraian        String
+  glAccountId   String
+  glAccount     GlAccount   @relation(fields: [glAccountId], references: [id])
+  jumlah        Float
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 }

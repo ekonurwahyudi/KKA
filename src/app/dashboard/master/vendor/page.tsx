@@ -11,6 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Plus, Pencil, Trash2, CheckCircle } from 'lucide-react'
+import { TableSkeleton } from '@/components/loading'
 
 interface Vendor {
   id: string
@@ -33,6 +34,7 @@ export default function VendorPage() {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [isActive, setIsActive] = useState(true)
+  const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -40,7 +42,13 @@ export default function VendorPage() {
   }, [])
 
   const loadData = () => {
-    fetch('/api/vendor?includeInactive=true').then((r) => r.json()).then(setVendors)
+    setLoading(true)
+    fetch('/api/vendor?includeInactive=true')
+      .then((r) => r.json())
+      .then(data => {
+        setVendors(data)
+        setLoading(false)
+      })
   }
 
   const openDialog = (item?: Vendor) => {
@@ -127,6 +135,10 @@ export default function VendorPage() {
       ),
     },
   ]
+
+  if (loading) {
+    return <TableSkeleton title="Master Vendor" showFilters={false} showActions={true} rows={6} columns={6} />
+  }
 
   return (
     <div className="space-y-6">

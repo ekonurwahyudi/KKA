@@ -1,0 +1,5 @@
+export { DashboardSkeleton } from './dashboard-skeleton'
+export { TableSkeleton } from './table-skeleton'
+export { FormSkeleton } from './form-skeleton'
+export { CardSkeleton } from './card-skeleton'
+export { LoginSkeleton } from './login-skeleton'

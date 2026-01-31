@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DataTable } from '@/components/ui/data-table'
+import { TableSkeleton } from '@/components/loading'
 
 interface GlAccount { id: string; code: string; description: string }
 interface Regional { id: string; code: string; name: string }
@@ -30,19 +31,34 @@ export default function ReportPage() {
   const [filterGl, setFilterGl] = useState('all')
   const [filterQuarter, setFilterQuarter] = useState('all')
   const [filterRegional, setFilterRegional] = useState('all')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/gl-account').then(r => r.json()).then(setGlAccounts)
-    fetch('/api/regional').then(r => r.json()).then(setRegionals)
-    fetch(`/api/budget?year=${year}`).then(r => r.json()).then(setBudgets)
+    setLoading(true)
+    Promise.all([
+      fetch('/api/gl-account').then(r => r.json()),
+      fetch('/api/regional').then(r => r.json()),
+      fetch(`/api/budget?year=${year}`).then(r => r.json())
+    ]).then(([glData, regionalData, budgetData]) => {
+      setGlAccounts(glData)
+      setRegionals(regionalData)
+      setBudgets(budgetData)
+      setLoading(false)
+    })
   }, [year])
 
   useEffect(() => {
+    setLoading(true)
     const params = new URLSearchParams({ year: year.toString() })
     if (filterGl !== 'all') params.append('glAccountId', filterGl)
     if (filterQuarter !== 'all') params.append('quarter', filterQuarter)
     if (filterRegional !== 'all') params.append('regionalCode', filterRegional)
-    fetch(`/api/transaction?${params}`).then(r => r.json()).then(setTransactions)
+    fetch(`/api/transaction?${params}`)
+      .then(r => r.json())
+      .then(data => {
+        setTransactions(data)
+        setLoading(false)
+      })
   }, [year, filterGl, filterQuarter, filterRegional])
 
   const summaryColumns: ColumnDef<SummaryRow>[] = [
@@ -93,6 +109,10 @@ export default function ReportPage() {
       })
     })
     return summary
+  }
+
+  if (loading) {
+    return <TableSkeleton title="Laporan Anggaran" showFilters={true} showActions={false} rows={10} columns={8} />
   }
 
   return (

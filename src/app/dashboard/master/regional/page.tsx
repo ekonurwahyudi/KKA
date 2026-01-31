@@ -11,6 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Plus, Pencil, Trash2, CheckCircle } from 'lucide-react'
+import { TableSkeleton } from '@/components/loading'
 
 interface Regional {
   id: string
@@ -28,13 +29,20 @@ export default function RegionalPage() {
   const [name, setName] = useState('')
   const [isActive, setIsActive] = useState(true)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadData()
   }, [])
 
   const loadData = () => {
-    fetch('/api/regional?includeInactive=true').then((r) => r.json()).then(setRegionals)
+    setLoading(true)
+    fetch('/api/regional?includeInactive=true')
+      .then((r) => r.json())
+      .then(data => {
+        setRegionals(data)
+        setLoading(false)
+      })
   }
 
   const openDialog = (item?: Regional) => {
@@ -112,6 +120,10 @@ export default function RegionalPage() {
       ),
     },
   ]
+
+  if (loading) {
+    return <TableSkeleton title="Master Regional" showFilters={false} showActions={true} rows={6} columns={4} />
+  }
 
   return (
     <div className="space-y-6">

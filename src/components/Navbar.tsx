@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LayoutDashboard, Wallet, BarChart3, LogOut, Database, ChevronDown, Building2, FileCode, Settings, FolderOpen, Users, UserCog } from 'lucide-react'
+import { LayoutDashboard, Wallet, BarChart3, LogOut, Database, ChevronDown, Building2, FileCode, Settings, FolderOpen, Users, UserCog, CreditCard } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // Weather icon component using custom images
@@ -62,7 +62,7 @@ export default function Navbar() {
     setCurrentDate(now.toLocaleDateString('id-ID', options))
 
     // Fetch Jakarta weather from Open-Meteo (free, no API key needed)
-    fetch('https://api.open-meteo.com/v1/forecast?latitude=-6.2088&longitude=106.8456&current=temperature_2m,weather_code')
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=-6.230358&longitude=106.8157504&current=temperature_2m,weather_code')
       .then(res => res.json())
       .then(data => {
         if (data.current) {
@@ -79,6 +79,7 @@ export default function Navbar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/dashboard/budget', label: 'Anggaran', icon: FolderOpen },
     { href: '/dashboard/transaction', label: 'Pencatatan', icon: Wallet },
+    { href: '/dashboard/imprest-fund', label: 'Imprest Fund', icon: CreditCard },
     { href: '/dashboard/report', label: 'Laporan', icon: BarChart3 },
   ]
 

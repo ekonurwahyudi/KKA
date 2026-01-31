@@ -9,6 +9,7 @@ import { DataTable } from '@/components/ui/data-table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Plus, Pencil, Trash2, CheckCircle } from 'lucide-react'
+import { TableSkeleton } from '@/components/loading'
 
 interface PicAnggaran {
   id: string
@@ -33,13 +34,20 @@ export default function PicAnggaranPage() {
   const [nikPenanggungJawab, setNikPenanggungJawab] = useState('')
   const [year, setYear] = useState(new Date().getFullYear())
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadData()
   }, [])
 
   const loadData = () => {
-    fetch('/api/pic-anggaran').then((r) => r.json()).then(setData)
+    setLoading(true)
+    fetch('/api/pic-anggaran')
+      .then((r) => r.json())
+      .then(data => {
+        setData(data)
+        setLoading(false)
+      })
   }
 
   const openDialog = (item?: PicAnggaran) => {
@@ -147,6 +155,10 @@ export default function PicAnggaranPage() {
       ),
     },
   ]
+
+  if (loading) {
+    return <TableSkeleton title="Master PIC Anggaran" showFilters={false} showActions={true} rows={6} columns={7} />
+  }
 
   return (
     <div className="space-y-6">
