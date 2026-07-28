@@ -332,7 +332,7 @@ export default function ImprestFundPage() {
   const handleEditImprest = async () => {
     if (!editingImprest) return
     if (editingImprest.status === 'draft') {
-      const hasInvalidItems = editingImprest.items.some(item => !item.tanggal || !item.uraian.trim() || !item.glAccountId || item.jumlah <= 0)
+      const hasInvalidItems = editingImprest.items.some(item => !item.tanggal || !item.uraian.trim() || !item.glAccountId || !item.areaPengguna?.trim() || item.jumlah <= 0)
       if (hasInvalidItems) {
         setMessage('Semua field pada uraian harus diisi dengan benar!')
         setTimeout(() => setMessage(''), 3000)
@@ -357,7 +357,7 @@ export default function ImprestFundPage() {
         data: {
           kelompokKegiatan: editingImprest.kelompokKegiatan, regionalCode: editingImprest.regionalCode,
           keterangan: editingImprest.keterangan, debit: editingImprest.debit, status: finalStatus,
-          items: editingImprest.items.map(item => ({ tanggal: item.tanggal, uraian: item.uraian, glAccountId: item.glAccountId, jumlah: item.jumlah })),
+          items: editingImprest.items.map(item => ({ id: item.id, tanggal: item.tanggal, uraian: item.uraian, glAccountId: item.glAccountId, areaPengguna: item.areaPengguna, jumlah: item.jumlah })),
           noTiketMydx: editingImprest.noTiketMydx, tglSerahFinance: editingImprest.tglSerahFinance,
           picFinance: editingImprest.picFinance, noHpFinance: editingImprest.noHpFinance,
           tglTransferVendor: editingImprest.tglTransferVendor, nilaiTransfer: editingImprest.nilaiTransfer,
@@ -1621,8 +1621,8 @@ export default function ImprestFundPage() {
               <div className="flex gap-2 ml-auto">
                 <Button variant="outline" onClick={() => { setShowItemModal(false); setEditingItemIndex(null) }}>Batal</Button>
                 <Button onClick={() => {
-                  if (!itemForm.uraian || !itemForm.glAccountId || itemForm.jumlah <= 0) {
-                    setMessage('Uraian, GL Account, dan Jumlah harus diisi!')
+                  if (!itemForm.uraian || !itemForm.glAccountId || !itemForm.areaPengguna || itemForm.jumlah <= 0) {
+                    setMessage('Uraian, GL Account, Area Pengguna, dan Jumlah harus diisi!')
                     setTimeout(() => setMessage(''), 3000)
                     return
                   }

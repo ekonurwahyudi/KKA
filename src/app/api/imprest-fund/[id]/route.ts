@@ -165,19 +165,27 @@ export async function PUT(
 
     // If items are provided, update them
     if (items && Array.isArray(items)) {
+      const currentItemsById = new Map(
+        currentImprest.items.map((item: any) => [item.id, item])
+      )
+
       // Delete existing items and create new ones
       await (prisma as any).imprestItem.deleteMany({
         where: { imprestFundId: params.id }
       })
 
       updateData.items = {
-        create: items.map((item: any) => ({
-          tanggal: new Date(item.tanggal),
-          uraian: item.uraian,
-          glAccountId: item.glAccountId,
-          areaPengguna: item.areaPengguna || null,
-          jumlah: item.jumlah
-        }))
+        create: items.map((item: any, index: number) => {
+          const existingItem = item.id ? currentItemsById.get(item.id) : currentImprest.items[index]
+
+          return {
+            tanggal: new Date(item.tanggal),
+            uraian: item.uraian,
+            glAccountId: item.glAccountId,
+            areaPengguna: item.areaPengguna !== undefined ? item.areaPengguna || null : existingItem?.areaPengguna || null,
+            jumlah: item.jumlah
+          }
+        })
       }
     }
 
