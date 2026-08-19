@@ -11,6 +11,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     data: {
       code: data.code,
       name: data.name,
+      costCenter: data.costCenter || null,
       isActive: data.isActive,
     },
   })

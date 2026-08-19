@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
     data: {
       code: data.code,
       name: data.name,
+      costCenter: data.costCenter || null,
     },
   })
 

@@ -14,7 +14,7 @@ import { Plus, Pencil, Trash2, CheckCircle } from 'lucide-react'
 import { TableSkeleton } from '@/components/loading'
 import { useRegionals, useCreateRegional, useUpdateRegional, useDeleteRegional } from '@/lib/hooks/useMaster'
 
-interface Regional { id: string; code: string; name: string; isActive: boolean }
+interface Regional { id: string; code: string; name: string; costCenter?: string; isActive: boolean }
 
 export default function RegionalPage() {
   const { data: regionals = [], isLoading } = useRegionals()
@@ -27,19 +27,20 @@ export default function RegionalPage() {
   const [editing, setEditing] = useState<Regional | null>(null)
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
+  const [costCenter, setCostCenter] = useState('')
   const [isActive, setIsActive] = useState(true)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const showMessage = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(''), 3000) }
 
   const openDialog = (item?: Regional) => {
-    if (item) { setEditing(item); setCode(item.code); setName(item.name); setIsActive(item.isActive) }
-    else { setEditing(null); setCode(''); setName(''); setIsActive(true) }
+    if (item) { setEditing(item); setCode(item.code); setName(item.name); setCostCenter(item.costCenter || ''); setIsActive(item.isActive) }
+    else { setEditing(null); setCode(''); setName(''); setCostCenter(''); setIsActive(true) }
     setShowDialog(true)
   }
 
   const handleSave = async () => {
-    const data = { code, name, isActive }
+    const data = { code, name, costCenter, isActive }
     try {
       if (editing) { await updateRegional.mutateAsync({ id: editing.id, data }); showMessage('Regional berhasil diupdate!') }
       else { await createRegional.mutateAsync(data); showMessage('Regional berhasil ditambahkan!') }
@@ -56,6 +57,7 @@ export default function RegionalPage() {
   const columns: ColumnDef<Regional>[] = [
     { accessorKey: 'code', header: 'Kode' },
     { accessorKey: 'name', header: 'Nama Regional' },
+    { accessorKey: 'costCenter', header: 'Cost Center', cell: ({ row }) => row.original.costCenter || '-' },
     { accessorKey: 'isActive', header: 'Status', cell: ({ row }) => (<Badge variant={row.getValue('isActive') ? 'default' : 'secondary'}>{row.getValue('isActive') ? 'Aktif' : 'Nonaktif'}</Badge>) },
     { id: 'actions', header: 'Aksi', cell: ({ row }) => (
       <div className="flex gap-1">
@@ -84,6 +86,7 @@ export default function RegionalPage() {
           <div className="space-y-4">
             <div className="space-y-2"><Label>Kode</Label><Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="TREG-1" /></div>
             <div className="space-y-2"><Label>Nama Regional</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Regional 1" /></div>
+            <div className="space-y-2"><Label>Cost Center</Label><Input value={costCenter} onChange={(e) => setCostCenter(e.target.value)} placeholder="123456" /></div>
             {editing && (<div className="flex items-center gap-2"><Switch checked={isActive} onCheckedChange={setIsActive} /><Label>Aktif</Label></div>)}
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setShowDialog(false)}>Batal</Button>

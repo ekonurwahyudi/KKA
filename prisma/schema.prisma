@@ -34,6 +34,7 @@ model Regional {
   id        String   @id @default(cuid())
   code      String   @unique
   name      String
+  costCenter String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -80,8 +81,68 @@ model Budget {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   allocations     RegionalAllocation[]
+  rraSourceLogs   BudgetRraLog[] @relation("RraSourceBudget")
+  rraTargetLogs   BudgetRraLog[] @relation("RraTargetBudget")
+  rraLines        BudgetRraLine[]
 
   @@unique([glAccountId, year])
+}
+
+model BudgetRraLog {
+  id                 String   @id @default(cuid())
+  type               String
+  year               Int
+  month              Int
+  sourceBudgetId     String
+  sourceBudget       Budget   @relation("RraSourceBudget", fields: [sourceBudgetId], references: [id])
+  sourceRegionalCode String?
+  sourceCostCenter   String?
+  targetBudgetId     String
+  targetBudget       Budget   @relation("RraTargetBudget", fields: [targetBudgetId], references: [id])
+  targetRegionalCode String?
+  targetCostCenter   String?
+  amount             Float
+  sourceBeforeAmount Float
+  targetBeforeAmount Float
+  sourceRraAmount    Float
+  targetRraAmount    Float
+  sourceAfterAmount  Float
+  targetAfterAmount  Float
+  description        String?
+  beforeSnapshot     Json
+  afterSnapshot      Json
+  createdAt          DateTime @default(now())
+  lines              BudgetRraLine[]
+
+  @@index([year])
+  @@index([type])
+  @@index([sourceBudgetId])
+  @@index([targetBudgetId])
+  @@index([createdAt(sort: Desc)])
+}
+
+model BudgetRraLine {
+  id            String       @id @default(cuid())
+  rraLogId      String
+  rraLog        BudgetRraLog @relation(fields: [rraLogId], references: [id], onDelete: Cascade)
+  side          String
+  budgetId      String
+  budget        Budget       @relation(fields: [budgetId], references: [id])
+  regionalCode  String
+  costCenter    String?
+  regionalName  String?
+  accountCode   String
+  accountName   String
+  amount        Float
+  beforeAmount  Float
+  rraAmount     Float
+  afterAmount   Float
+  createdAt     DateTime     @default(now())
+
+  @@index([rraLogId])
+  @@index([side])
+  @@index([budgetId])
+  @@index([regionalCode])
 }
 
 model RegionalAllocation {

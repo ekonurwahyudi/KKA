@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LayoutDashboard, Wallet, BarChart3, LogOut, Database, ChevronDown, Building2, FileCode, Settings, FolderOpen, Users, UserCog, CreditCard, Menu, X, UserCheck, Banknote } from 'lucide-react'
+import { LayoutDashboard, Wallet, BarChart3, LogOut, Database, ChevronDown, Building2, FileCode, Settings, FolderOpen, Users, UserCog, CreditCard, Menu, X, UserCheck, Banknote, ArrowRightLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // Weather icon component using custom images
@@ -86,6 +86,7 @@ export default function Navbar() {
     { href: '/dashboard/budget', label: 'Anggaran', icon: FolderOpen },
     { href: '/dashboard/transaction', label: 'Pencatatan', icon: Wallet },
     { href: '/dashboard/imprest-fund', label: 'Imprest Fund', icon: CreditCard },
+    { href: '/dashboard/rra', label: 'RRA', icon: ArrowRightLeft },
     { href: '/dashboard/cash', label: 'Cash', icon: Banknote },
     { href: '/dashboard/report', label: 'Laporan', icon: BarChart3 },
   ]
