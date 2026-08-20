@@ -302,6 +302,13 @@ export default function DashboardPage() {
     // Initialize all regionals with 0 so we can see which ones have no usage
     const areaData: Record<string, number> = {}
     const regionalNames = regionals.map((r: any) => r.name)
+    const normalizeArea = (value?: string | null) => String(value || '').trim().toUpperCase()
+    const isKnownArea = (value?: string | null) => {
+      const area = normalizeArea(value)
+      if (!area) return false
+      if (regionalNames.includes(value || '')) return true
+      return area.startsWith('AREA ') || area.startsWith('AREA-') || area.includes(' DEFA HO') || area === 'DEFA HO TIF' || area === 'A-DEFA-HO' || area.startsWith('EVP')
+    }
     
     regionals.forEach((r: any) => {
       areaData[r.name] = 0
@@ -319,8 +326,8 @@ export default function DashboardPage() {
       
       const area = t.regionalPengguna || 'Tidak Diketahui'
       
-      // Only include if area is a valid regional name (skip person names)
-      if (!regionalNames.includes(area)) return
+      // Include valid regional names and recognizable area labels even when master regional fails to load.
+      if (!isKnownArea(area)) return
       
       if (!areaData[area]) {
         areaData[area] = 0
@@ -338,7 +345,7 @@ export default function DashboardPage() {
         .filter(line => (line.rraLog?.lines || []).some(peer => peer.side === 'DONOR' && isHoLine(peer)))
         .forEach(line => {
           const area = line.regionalName || regionals.find((r: any) => r.code === line.regionalCode)?.name
-          if (!area || !regionalNames.includes(area)) return
+          if (!isKnownArea(area)) return
           areaData[area] = (areaData[area] || 0) + Number(line.amount || 0)
         })
     })
