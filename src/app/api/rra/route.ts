@@ -56,17 +56,52 @@ function budgetSnapshot(budget: any) {
 }
 
 async function getBudget(tx: any, id: string) {
-  return tx.budget.findUnique({
-    where: { id },
-    include: { glAccount: true, allocations: true },
-  })
+  try {
+    return await tx.budget.findUnique({
+      where: { id },
+      include: { glAccount: true, allocations: true },
+    })
+  } catch (error: any) {
+    const message = String(error?.message || '')
+    if (error?.code !== 'P2022' || !message.includes('rraDelta')) throw error
+
+    return tx.budget.findUnique({
+      where: { id },
+      include: {
+        glAccount: true,
+        allocations: {
+          select: {
+            id: true,
+            budgetId: true,
+            regionalCode: true,
+            quarter: true,
+            amount: true,
+            percentage: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    })
+  }
 }
 
 async function getRegional(tx: any, regionalCode: string) {
-  return tx.regional.findUnique({
-    where: { code: regionalCode },
-    select: { code: true, name: true, costCenter: true },
-  })
+  try {
+    return await tx.regional.findUnique({
+      where: { code: regionalCode },
+      select: { code: true, name: true, costCenter: true },
+    })
+  } catch (error: any) {
+    const message = String(error?.message || '')
+    if (error?.code !== 'P2022' || !message.includes('costCenter')) throw error
+
+    const regional = await tx.regional.findUnique({
+      where: { code: regionalCode },
+      select: { code: true, name: true },
+    })
+    return regional ? { ...regional, costCenter: null } : null
+  }
 }
 
 function allocationAmount(budget: any, quarter: number, regionalCode: string) {
@@ -75,9 +110,21 @@ function allocationAmount(budget: any, quarter: number, regionalCode: string) {
 }
 
 async function adjustAllocation(tx: any, budgetId: string, quarter: number, regionalCode: string, delta: number) {
-  const allocation = await tx.regionalAllocation.findUnique({
-    where: { budgetId_regionalCode_quarter: { budgetId, regionalCode, quarter } },
-  })
+  let allocation: any = null
+  try {
+    allocation = await tx.regionalAllocation.findUnique({
+      where: { budgetId_regionalCode_quarter: { budgetId, regionalCode, quarter } },
+    })
+  } catch (error: any) {
+    const message = String(error?.message || '')
+    if (error?.code !== 'P2022' || !message.includes('rraDelta')) throw error
+
+    allocation = await tx.regionalAllocation.findUnique({
+      where: { budgetId_regionalCode_quarter: { budgetId, regionalCode, quarter } },
+      select: { amount: true },
+    })
+  }
+
   const nextDelta = Number(allocation?.rraDelta || 0) + delta
   const nextEffectiveAmount = Number(allocation?.amount || 0) + nextDelta
   if (nextEffectiveAmount < 0) throw new Error('Nilai RRA melebihi alokasi cost center donor')
@@ -259,6 +306,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result)
   } catch (error: any) {
     console.error('Error creating RRA:', error)
+    if (error?.code === 'P2021') {
+      return NextResponse.json({
+        error: 'Tabel RRA belum tersedia di database production. Jalankan migrasi BudgetRraLog dan BudgetRraLine terlebih dahulu.',
+      }, { status: 400 })
+    }
+    if (error?.code === 'P2022') {
+      return NextResponse.json({
+        error: `Kolom database belum lengkap untuk RRA: ${error?.meta?.column || error?.message || 'unknown'}`,
+      }, { status: 400 })
+    }
     return NextResponse.json({ error: error?.message || 'Gagal menyimpan RRA' }, { status: 500 })
   }
 }
