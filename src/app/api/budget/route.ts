@@ -3,34 +3,54 @@ import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
-async function findBudgets(year: number, withRraDelta = true) {
-  return prisma.budget.findMany({
-    where: { year },
-    include: {
-      glAccount: true,
-      allocations: withRraDelta
-        ? true
-        : {
-            select: {
-              id: true,
-              budgetId: true,
-              regionalCode: true,
-              quarter: true,
-              amount: true,
-              percentage: true,
-              createdAt: true,
-              updatedAt: true,
-            },
-          },
-      rraLines: {
-        include: {
-          rraLog: {
-            include: { lines: true },
+type BudgetQueryOptions = {
+  withRraDelta?: boolean
+  withRraLines?: boolean
+}
+
+async function findBudgets(year: number, options: BudgetQueryOptions = {}) {
+  const { withRraDelta = true, withRraLines = true } = options
+  const include: any = {
+    glAccount: true,
+    allocations: withRraDelta
+      ? true
+      : {
+          select: {
+            id: true,
+            budgetId: true,
+            regionalCode: true,
+            quarter: true,
+            amount: true,
+            percentage: true,
+            createdAt: true,
+            updatedAt: true,
           },
         },
+  }
+
+  if (withRraLines) {
+    include.rraLines = {
+      include: {
+        rraLog: {
+          include: { lines: true },
+        },
       },
-    },
+    }
+  }
+
+  const budgets = await prisma.budget.findMany({
+    where: { year },
+    include,
   })
+
+  return budgets.map((budget: any) => ({
+    ...budget,
+    allocations: budget.allocations.map((allocation: any) => ({
+      ...allocation,
+      rraDelta: Number(allocation.rraDelta || 0),
+    })),
+    rraLines: budget.rraLines || [],
+  }))
 }
 
 export async function GET(req: NextRequest) {
@@ -44,18 +64,34 @@ export async function GET(req: NextRequest) {
     const isMissingRraDelta = error?.code === 'P2022' && message.includes('rraDelta')
 
     if (!isMissingRraDelta) {
-      console.error('Error fetching budgets:', error)
-      return NextResponse.json({ error: 'Failed to fetch budgets' }, { status: 500 })
+      console.warn('Budget RRA include failed; retrying without RRA lines.', error)
+      try {
+        const budgets = await findBudgets(year, { withRraLines: false })
+        return NextResponse.json(budgets)
+      } catch (fallbackError: any) {
+        const fallbackMessage = String(fallbackError?.message || '')
+        const fallbackMissingRraDelta = fallbackError?.code === 'P2022' && fallbackMessage.includes('rraDelta')
+
+        if (!fallbackMissingRraDelta) {
+          console.error('Error fetching budgets:', fallbackError)
+          return NextResponse.json({ error: 'Failed to fetch budgets' }, { status: 500 })
+        }
+
+        console.warn('RegionalAllocation.rraDelta column is missing; returning base budgets without RRA lines.')
+        const budgets = await findBudgets(year, { withRraDelta: false, withRraLines: false })
+        return NextResponse.json(budgets)
+      }
     }
 
-    console.warn('RegionalAllocation.rraDelta column is missing; returning budgets with rraDelta=0 fallback.')
-    const budgets = await findBudgets(year, false)
-    return NextResponse.json(
-      budgets.map((budget) => ({
-        ...budget,
-        allocations: budget.allocations.map((allocation) => ({ ...allocation, rraDelta: 0 })),
-      }))
-    )
+    console.warn('RegionalAllocation.rraDelta column is missing; retrying budget query with rraDelta=0 fallback.')
+    try {
+      const budgets = await findBudgets(year, { withRraDelta: false })
+      return NextResponse.json(budgets)
+    } catch (fallbackError) {
+      console.warn('Budget RRA include also failed; returning base budgets without RRA lines.', fallbackError)
+      const budgets = await findBudgets(year, { withRraDelta: false, withRraLines: false })
+      return NextResponse.json(budgets)
+    }
   }
 }
 
