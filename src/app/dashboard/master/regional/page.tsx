@@ -58,7 +58,10 @@ export default function RegionalPage() {
     { accessorKey: 'code', header: 'Kode' },
     { accessorKey: 'name', header: 'Nama Regional' },
     { accessorKey: 'costCenter', header: 'Cost Center', cell: ({ row }) => row.original.costCenter || '-' },
-    { accessorKey: 'isActive', header: 'Status', cell: ({ row }) => (<Badge variant={row.getValue('isActive') ? 'default' : 'secondary'}>{row.getValue('isActive') ? 'Aktif' : 'Nonaktif'}</Badge>) },
+    { accessorKey: 'isActive', header: 'Status', cell: ({ row }) => {
+      const isActive = row.original.isActive !== false
+      return <Badge variant={isActive ? 'default' : 'secondary'}>{isActive ? 'Aktif' : 'Nonaktif'}</Badge>
+    } },
     { id: 'actions', header: 'Aksi', cell: ({ row }) => (
       <div className="flex gap-1">
         <Button variant="outline" size="sm" onClick={() => openDialog(row.original)}><Pencil className="h-4 w-4" /></Button>
