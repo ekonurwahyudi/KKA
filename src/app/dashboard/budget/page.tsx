@@ -42,6 +42,18 @@ const quarterMonths: Record<QuarterKey, MonthKey[]> = {
   q1: ['jan', 'feb', 'mar'], q2: ['apr', 'may', 'jun'], q3: ['jul', 'aug', 'sep'], q4: ['oct', 'nov', 'dec']
 }
 
+const defaultRegionals: Regional[] = [
+  { id: 'A-DEFA-HO', code: 'A-DEFA-HO', name: 'A-DEFA-HO' },
+  { id: 'AREA-1', code: 'AREA-1', name: 'AREA-1' },
+  { id: 'AREA-2a', code: 'AREA-2a', name: 'AREA-2a' },
+  { id: 'AREA-2b', code: 'AREA-2b', name: 'AREA-2b' },
+  { id: 'AREA-3a', code: 'AREA-3a', name: 'AREA-3a' },
+  { id: 'AREA-3b', code: 'AREA-3b', name: 'AREA-3b' },
+  { id: 'AREA-4a', code: 'AREA-4a', name: 'AREA-4a' },
+  { id: 'AREA-4b', code: 'AREA-4b', name: 'AREA-4b' },
+  { id: 'EVP', code: 'EVP', name: 'EVP' },
+]
+
 export default function BudgetPage() {
   const [year, setYear] = useState(new Date().getFullYear())
   
@@ -97,7 +109,11 @@ export default function BudgetPage() {
     if (!budget) return []
 
     const codes = Array.from(new Set((budget.allocations || []).map((allocation) => allocation.regionalCode)))
-    return codes.map((code) => ({ id: code, code, name: code }))
+    if (codes.length === 0) return defaultRegionals
+
+    const allocationRegionals = codes.map((code) => ({ id: code, code, name: code }))
+    const missingDefaults = defaultRegionals.filter((regional) => !codes.includes(regional.code))
+    return [...allocationRegionals, ...missingDefaults]
   }
 
   // Calculate quarters from months
