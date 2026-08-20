@@ -3,14 +3,25 @@ import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
-  const year = parseInt(req.nextUrl.searchParams.get('year') || new Date().getFullYear().toString())
-  
-  const budgets = await prisma.budget.findMany({
+async function findBudgets(year: number, withRraDelta = true) {
+  return prisma.budget.findMany({
     where: { year },
     include: {
       glAccount: true,
-      allocations: true,
+      allocations: withRraDelta
+        ? true
+        : {
+            select: {
+              id: true,
+              budgetId: true,
+              regionalCode: true,
+              quarter: true,
+              amount: true,
+              percentage: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
       rraLines: {
         include: {
           rraLog: {
@@ -20,8 +31,32 @@ export async function GET(req: NextRequest) {
       },
     },
   })
-  
-  return NextResponse.json(budgets)
+}
+
+export async function GET(req: NextRequest) {
+  const year = parseInt(req.nextUrl.searchParams.get('year') || new Date().getFullYear().toString())
+
+  try {
+    const budgets = await findBudgets(year)
+    return NextResponse.json(budgets)
+  } catch (error: any) {
+    const message = String(error?.message || '')
+    const isMissingRraDelta = error?.code === 'P2022' && message.includes('rraDelta')
+
+    if (!isMissingRraDelta) {
+      console.error('Error fetching budgets:', error)
+      return NextResponse.json({ error: 'Failed to fetch budgets' }, { status: 500 })
+    }
+
+    console.warn('RegionalAllocation.rraDelta column is missing; returning budgets with rraDelta=0 fallback.')
+    const budgets = await findBudgets(year, false)
+    return NextResponse.json(
+      budgets.map((budget) => ({
+        ...budget,
+        allocations: budget.allocations.map((allocation) => ({ ...allocation, rraDelta: 0 })),
+      }))
+    )
+  }
 }
 
 export async function POST(req: NextRequest) {
