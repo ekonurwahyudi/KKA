@@ -1,0 +1,2 @@
+-- AddColumn
+ALTER TABLE "RegionalAllocation" ADD COLUMN "rraDelta" DOUBLE PRECISION NOT NULL DEFAULT 0;

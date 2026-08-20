@@ -8,7 +8,7 @@ interface Budget {
   janAmount: number; febAmount: number; marAmount: number; aprAmount: number
   mayAmount: number; junAmount: number; julAmount: number; augAmount: number
   sepAmount: number; octAmount: number; novAmount: number; decAmount: number
-  glAccount: GlAccount; allocations: { regionalCode: string; quarter: number; amount: number; percentage: number }[]
+  glAccount: GlAccount; allocations: { regionalCode: string; quarter: number; amount: number; rraDelta?: number; percentage: number }[]
 }
 
 // Query keys

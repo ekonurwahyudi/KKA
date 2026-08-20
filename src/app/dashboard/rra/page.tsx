@@ -21,7 +21,7 @@ import { useCreateRra, useRraLogs } from '@/lib/hooks/useRra'
 
 interface GlAccount { id: string; code: string; description: string }
 interface Regional { id: string; code: string; name: string; costCenter?: string; isActive: boolean }
-interface Allocation { regionalCode: string; quarter: number; amount: number; percentage: number }
+interface Allocation { regionalCode: string; quarter: number; amount: number; rraDelta?: number; percentage: number }
 interface Budget {
   id: string; glAccountId: string; year: number; totalAmount: number
   q1Amount: number; q2Amount: number; q3Amount: number; q4Amount: number
@@ -33,7 +33,7 @@ interface Budget {
 interface RraInputLine { id: string; budgetId: string; regionalCode: string; amount: number }
 interface RraLine {
   id: string; side: 'DONOR' | 'PENERIMA'; budgetId: string; regionalCode: string
-  costCenter?: string; accountCode: string; accountName: string; amount: number
+  costCenter?: string; regionalName?: string; accountCode: string; accountName: string; amount: number
 }
 interface RraLog {
   id: string; type: string; year: number; month: number; amount: number; createdAt: string; description?: string
@@ -78,7 +78,8 @@ export default function RraPage() {
   const getBudget = (budgetId: string) => (budgets as Budget[]).find(b => b.id === budgetId)
   const getAllocation = (line: RraInputLine) => {
     const budget = getBudget(line.budgetId)
-    return budget?.allocations.find(a => a.quarter === selectedQuarter && a.regionalCode === line.regionalCode)?.amount || 0
+    const allocation = budget?.allocations.find(a => a.quarter === selectedQuarter && a.regionalCode === line.regionalCode)
+    return Number(allocation?.amount || 0) + Number(allocation?.rraDelta || 0)
   }
 
   const updateLine = (side: 'source' | 'target', id: string, patch: Partial<RraInputLine>) => {
@@ -98,6 +99,38 @@ export default function RraPage() {
   }
 
   const validateLines = (lines: RraInputLine[]) => lines.every(line => line.budgetId && line.regionalCode && line.amount > 0)
+
+  const fallbackLine = (log: RraLog, side: 'DONOR' | 'PENERIMA'): RraLine => {
+    const isDonor = side === 'DONOR'
+    const budget = isDonor ? log.sourceBudget : log.targetBudget
+    return {
+      id: `${log.id}-${side}`,
+      side,
+      budgetId: budget.id,
+      regionalCode: isDonor ? (log.sourceRegionalCode || '') : (log.targetRegionalCode || ''),
+      costCenter: isDonor ? log.sourceCostCenter : log.targetCostCenter,
+      accountCode: budget.glAccount.code,
+      accountName: budget.glAccount.description,
+      amount: log.amount,
+    }
+  }
+
+  const formatHistoryLines = (log: RraLog, side: 'DONOR' | 'PENERIMA') => {
+    const lines = (log.lines || []).filter(line => line.side === side)
+    const data = lines.length > 0 ? lines : [fallbackLine(log, side)]
+
+    return (
+      <div className="min-w-[260px] space-y-1 text-xs">
+        {data.map((line, index) => (
+          <div key={line.id || `${side}-${index}`} className="text-muted-foreground">
+            <span className="font-medium text-foreground">{line.regionalName || line.regionalCode || line.costCenter}</span>
+            <span> - {line.accountCode}</span>
+            {line.accountName && <span> {line.accountName}</span>}
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   const submitRra = async () => {
     if (!validateLines(sourceLines) || !validateLines(targetLines)) {
@@ -184,12 +217,8 @@ export default function RraPage() {
     { accessorKey: 'createdAt', header: 'Tanggal', cell: ({ row }) => format(new Date(row.original.createdAt), 'dd MMM yyyy HH:mm', { locale: idLocale }) },
     { accessorKey: 'type', header: 'Jenis', cell: ({ row }) => <Badge variant="secondary">{rraLabels[row.original.type] || row.original.type}</Badge> },
     { accessorKey: 'month', header: 'Bulan', cell: ({ row }) => monthNames[row.original.month - 1] || row.original.month },
-    { id: 'lines', header: 'Baris', cell: ({ row }) => {
-      const donorCount = row.original.lines?.filter(line => line.side === 'DONOR').length || 1
-      const receiverCount = row.original.lines?.filter(line => line.side === 'PENERIMA').length || 1
-      return `${donorCount} donor / ${receiverCount} penerima`
-    } },
-    { id: 'summary', header: 'Ringkasan', cell: ({ row }) => <div className="min-w-[260px] text-xs text-muted-foreground">{row.original.sourceCostCenter || row.original.sourceRegionalCode} {'->'} {row.original.targetCostCenter || row.original.targetRegionalCode}</div> },
+    { id: 'donor', header: 'Donor', cell: ({ row }) => formatHistoryLines(row.original, 'DONOR') },
+    { id: 'receiver', header: 'Penerima', cell: ({ row }) => formatHistoryLines(row.original, 'PENERIMA') },
     { accessorKey: 'amount', header: () => <div className="text-right">Total RRA</div>, cell: ({ row }) => <div className="text-right font-semibold">{formatCurrency(row.original.amount)}</div> },
     { id: 'download', header: 'Excel', cell: ({ row }) => <Button variant="outline" size="sm" onClick={() => { window.location.href = `/api/rra/${row.original.id}/excel` }}><Download className="h-4 w-4" /></Button> },
   ]

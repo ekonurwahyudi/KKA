@@ -8,7 +8,17 @@ export async function GET(req: NextRequest) {
   
   const budgets = await prisma.budget.findMany({
     where: { year },
-    include: { glAccount: true, allocations: true },
+    include: {
+      glAccount: true,
+      allocations: true,
+      rraLines: {
+        include: {
+          rraLog: {
+            include: { lines: true },
+          },
+        },
+      },
+    },
   })
   
   return NextResponse.json(budgets)

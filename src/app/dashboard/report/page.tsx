@@ -21,7 +21,13 @@ interface Transaction {
 interface Budget {
   id: string; glAccountId: string; glAccount: GlAccount; totalAmount: number
   q1Amount: number; q2Amount: number; q3Amount: number; q4Amount: number
-  allocations: { regionalCode: string; quarter: number; amount: number }[]
+  allocations: { regionalCode: string; quarter: number; amount: number; rraDelta?: number }[]
+  rraLines?: RraLine[]
+}
+interface RraLine {
+  id: string; rraLogId: string; side: string; budgetId: string; regionalCode: string
+  regionalName?: string | null; costCenter?: string | null; amount: number; rraAmount: number
+  rraLog?: { month: number; lines: RraLine[] }
 }
 interface SummaryRow { key: string; glCode: string; quarter: number; regionalCode: string; regionalName: string; allocated: number; used: number; remaining: number }
 
@@ -77,16 +83,32 @@ export default function ReportPage() {
 
   const summaryData = (): SummaryRow[] => {
     const summary: SummaryRow[] = []
+    const isHoLine = (line?: Pick<RraLine, 'regionalCode' | 'regionalName' | 'costCenter'> | null) => {
+      const marker = `${line?.regionalCode || ''} ${line?.regionalName || ''} ${line?.costCenter || ''}`.toUpperCase()
+      return marker.includes('HO')
+    }
+    const isAbsorbedRraLine = (line: RraLine) => {
+      if (line.side !== 'DONOR' || !isHoLine(line)) return false
+      return (line.rraLog?.lines || []).some(peer => peer.side === 'PENERIMA' && !isHoLine(peer))
+    }
+    const getRraLineQuarter = (line: RraLine) => Math.ceil((line.rraLog?.month || 1) / 3)
     ;(budgets as Budget[]).forEach((budget) => {
       budget.allocations.forEach((alloc) => {
         const used = (transactions as Transaction[])
           .filter(t => t.glAccountId === budget.glAccountId && t.quarter === alloc.quarter && t.regionalCode === alloc.regionalCode)
           .reduce((sum, t) => sum + t.nilaiKwitansi, 0)
+        const rraUsed = (budget.rraLines || [])
+          .filter(line => line.regionalCode === alloc.regionalCode && getRraLineQuarter(line) === alloc.quarter && isAbsorbedRraLine(line))
+          .reduce((sum, line) => sum + Number(line.amount || 0), 0)
+        const rraMovement = (budget.rraLines || [])
+          .filter(line => line.regionalCode === alloc.regionalCode && getRraLineQuarter(line) === alloc.quarter && !isAbsorbedRraLine(line))
+          .reduce((sum, line) => sum + Number(line.rraAmount || 0), 0)
         const reg = (regionals as Regional[]).find(r => r.code === alloc.regionalCode)
+        const allocated = Number(alloc.amount || 0) + rraMovement
         const row: SummaryRow = {
           key: `${budget.glAccount.code}-Q${alloc.quarter}-${alloc.regionalCode}`,
           glCode: budget.glAccount.code, quarter: alloc.quarter, regionalCode: alloc.regionalCode,
-          regionalName: reg?.name || alloc.regionalCode, allocated: alloc.amount, used, remaining: alloc.amount - used,
+          regionalName: reg?.name || alloc.regionalCode, allocated, used: used + rraUsed, remaining: allocated - used - rraUsed,
         }
         if (filterGl !== 'all') { const gl = (glAccounts as GlAccount[]).find(g => g.id === filterGl); if (gl && row.glCode !== gl.code) return }
         if (filterQuarter !== 'all' && row.quarter !== parseInt(filterQuarter)) return

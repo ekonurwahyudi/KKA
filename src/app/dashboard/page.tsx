@@ -41,6 +41,21 @@ interface Budget {
   novAmount: number
   decAmount: number
   glAccount: GlAccount
+  allocations?: { regionalCode: string; quarter: number; amount: number; rraDelta?: number }[]
+  rraLines?: RraLine[]
+}
+
+interface RraLine {
+  id: string
+  rraLogId: string
+  side: string
+  budgetId: string
+  regionalCode: string
+  regionalName?: string | null
+  costCenter?: string | null
+  amount: number
+  rraAmount: number
+  rraLog?: { month: number; lines: RraLine[] }
 }
 
 interface Transaction {
@@ -91,8 +106,54 @@ export default function DashboardPage() {
 
   const isLoading = loadingGl || loadingBudgets || loadingTransactions
 
-  const totalBudget = budgets.reduce((sum, b) => sum + b.totalAmount, 0)
-  const totalUsed = transactions.reduce((sum: number, t: Transaction) => sum + t.nilaiTanpaPPN, 0)
+  const getEffectiveQuarterBudget = (budget: Budget, quarter: number) => {
+    const qKey = `q${quarter}Amount` as 'q1Amount' | 'q2Amount' | 'q3Amount' | 'q4Amount'
+    const rraDelta = (budget.rraLines || [])
+      .filter(line => Math.ceil((line.rraLog?.month || 1) / 3) === quarter && !isAbsorbedRraLine(line))
+      .reduce((sum, line) => sum + Number(line.rraAmount || 0), 0)
+    return Number(budget[qKey] || 0) + rraDelta
+  }
+
+  const isHoLine = (line?: Pick<RraLine, 'regionalCode' | 'regionalName' | 'costCenter'> | null) => {
+    const marker = `${line?.regionalCode || ''} ${line?.regionalName || ''} ${line?.costCenter || ''}`.toUpperCase()
+    return marker.includes('HO')
+  }
+
+  const isAbsorbedRraLine = (line: RraLine) => {
+    if (line.side !== 'DONOR' || !isHoLine(line)) return false
+    return (line.rraLog?.lines || []).some(peer => peer.side === 'PENERIMA' && !isHoLine(peer))
+  }
+
+  const getRraAbsorption = (budget: Budget, quarter?: number) => {
+    return (budget.rraLines || [])
+      .filter(line => isAbsorbedRraLine(line))
+      .filter(line => quarter ? Math.ceil((line.rraLog?.month || 1) / 3) === quarter : true)
+      .reduce((sum, line) => sum + Number(line.amount || 0), 0)
+  }
+
+  const getRraLineMonth = (line: RraLine) => Number(line.rraLog?.month || 1) - 1
+
+  const getRraAbsorptionByMonth = (budget: Budget, month: number) => {
+    return (budget.rraLines || [])
+      .filter(line => isAbsorbedRraLine(line))
+      .filter(line => getRraLineMonth(line) === month)
+      .reduce((sum, line) => sum + Number(line.amount || 0), 0)
+  }
+
+  const getRraMovementByMonth = (budget: Budget, month: number) => {
+    return (budget.rraLines || [])
+      .filter(line => !isAbsorbedRraLine(line))
+      .filter(line => getRraLineMonth(line) === month)
+      .reduce((sum, line) => sum + Number(line.rraAmount || 0), 0)
+  }
+
+  const getEffectiveTotalBudget = (budget: Budget) => {
+    return [1, 2, 3, 4].reduce((sum, quarter) => sum + getEffectiveQuarterBudget(budget, quarter), 0)
+  }
+
+  const totalBudget = budgets.reduce((sum, b) => sum + getEffectiveTotalBudget(b), 0)
+  const totalRraAbsorption = budgets.reduce((sum, b) => sum + getRraAbsorption(b), 0)
+  const totalUsed = transactions.reduce((sum: number, t: Transaction) => sum + t.nilaiTanpaPPN, 0) + totalRraAbsorption
 
   // Status counts from rawTransactions (already filtered by year from API)
   const openCount = rawTransactions.filter((t: Transaction) => t.status === 'Open').length
@@ -109,20 +170,20 @@ export default function DashboardPage() {
   }
 
   const getQuarterData = (quarter: number) => {
-    const qKey = `q${quarter}Amount` as 'q1Amount' | 'q2Amount' | 'q3Amount' | 'q4Amount'
-    const qBudget = budgets.reduce((sum, b) => sum + b[qKey], 0)
-    const qUsed = transactions
+    const qBudget = budgets.reduce((sum, b) => sum + getEffectiveQuarterBudget(b, quarter), 0)
+    const qTransactionUsed = transactions
       .filter(t => getQuarterFromDate(t.tanggalKwitansi) === quarter)
       .reduce((sum, t) => sum + t.nilaiTanpaPPN, 0)
+    const qUsed = qTransactionUsed + budgets.reduce((sum, b) => sum + getRraAbsorption(b, quarter), 0)
     return { budget: qBudget, used: qUsed, remaining: qBudget - qUsed }
   }
 
   const getBudgetByQuarter = (budget: Budget, quarter: number) => {
-    const qKey = `q${quarter}Amount` as 'q1Amount' | 'q2Amount' | 'q3Amount' | 'q4Amount'
-    const qBudget = budget[qKey]
-    const qUsed = transactions
+    const qBudget = getEffectiveQuarterBudget(budget, quarter)
+    const qTransactionUsed = transactions
       .filter(t => t.glAccountId === budget.glAccountId && getQuarterFromDate(t.tanggalKwitansi) === quarter)
       .reduce((sum, t) => sum + t.nilaiTanpaPPN, 0)
+    const qUsed = qTransactionUsed + getRraAbsorption(budget, quarter)
     return { budget: qBudget, used: qUsed, remaining: qBudget - qUsed }
   }
 
@@ -133,8 +194,8 @@ export default function DashboardPage() {
     
     // If no monthly budget set, fallback to quarter divided by 3
     const quarter = Math.ceil((month + 1) / 3)
-    const qKey = `q${quarter}Amount` as 'q1Amount' | 'q2Amount' | 'q3Amount' | 'q4Amount'
-    const fallbackBudget = monthlyBudget > 0 ? monthlyBudget : budget[qKey] / 3
+    const baseBudget = monthlyBudget > 0 ? monthlyBudget : getEffectiveQuarterBudget(budget, quarter) / 3
+    const effectiveBudget = baseBudget + getRraMovementByMonth(budget, month)
     
     // Hitung penggunaan per bulan - use tanggalKwitansi to determine the month
     const monthUsed = transactions
@@ -145,8 +206,9 @@ export default function DashboardPage() {
         return txDate.getMonth() === month
       })
       .reduce((sum, t) => sum + t.nilaiTanpaPPN, 0)
+    const rraUsed = getRraAbsorptionByMonth(budget, month)
     
-    return { budget: fallbackBudget, used: monthUsed, remaining: fallbackBudget - monthUsed }
+    return { budget: effectiveBudget, used: monthUsed + rraUsed, remaining: effectiveBudget - monthUsed - rraUsed }
   }
 
   // Data untuk monitoring chart
@@ -169,6 +231,18 @@ export default function DashboardPage() {
         monthlyData[month].jumlahPencatatan += 1
         monthlyData[month].totalNilai += t.nilaiTanpaPPN
       }
+    })
+
+    const filteredBudgets: Budget[] = selectedGlAccount === 'all'
+      ? budgets
+      : budgets.filter((budget: Budget) => budget.glAccountId === selectedGlAccount)
+
+    filteredBudgets.forEach((budget) => {
+      ;(budget.rraLines || [])
+        .filter(line => isAbsorbedRraLine(line))
+        .forEach(line => {
+          monthlyData[getRraLineMonth(line)].totalNilai += Number(line.amount || 0)
+        })
     })
 
     return monthlyData
@@ -252,6 +326,21 @@ export default function DashboardPage() {
         areaData[area] = 0
       }
       areaData[area] += t.nilaiTanpaPPN
+    })
+
+    const filteredBudgets: Budget[] = glFilter === 'all'
+      ? budgets
+      : budgets.filter((budget: Budget) => budget.glAccountId === glFilter)
+
+    filteredBudgets.forEach((budget) => {
+      ;(budget.rraLines || [])
+        .filter(line => line.side === 'PENERIMA' && !isHoLine(line))
+        .filter(line => (line.rraLog?.lines || []).some(peer => peer.side === 'DONOR' && isHoLine(peer)))
+        .forEach(line => {
+          const area = line.regionalName || regionals.find((r: any) => r.code === line.regionalCode)?.name
+          if (!area || !regionalNames.includes(area)) return
+          areaData[area] = (areaData[area] || 0) + Number(line.amount || 0)
+        })
     })
     
     // Convert to array format for chart
@@ -477,8 +566,7 @@ export default function DashboardPage() {
                     <TableBody>
                       {[...budgets]
                         .sort((a, b) => {
-                          const qKey = `q${q}Amount` as 'q1Amount' | 'q2Amount' | 'q3Amount' | 'q4Amount'
-                          return b[qKey] - a[qKey]
+                          return getEffectiveQuarterBudget(b, q) - getEffectiveQuarterBudget(a, q)
                         })
                         .map((budget) => {
                           const data = getBudgetByQuarter(budget, q)
@@ -537,7 +625,6 @@ export default function DashboardPage() {
               </div>
               {['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'].map((monthKey, monthIndex) => {
                 const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-                const monthAmountKeys = ['janAmount', 'febAmount', 'marAmount', 'aprAmount', 'mayAmount', 'junAmount', 'julAmount', 'augAmount', 'sepAmount', 'octAmount', 'novAmount', 'decAmount'] as const
                 return (
                   <TabsContent key={monthKey} value={monthKey}>
                     <div className="overflow-x-auto">
@@ -555,12 +642,7 @@ export default function DashboardPage() {
                       <TableBody>
                         {[...budgets]
                           .sort((a, b) => {
-                            // Sort by monthly budget, fallback to quarter/3 if no monthly budget
-                            const quarter = Math.ceil((monthIndex + 1) / 3)
-                            const qKey = `q${quarter}Amount` as 'q1Amount' | 'q2Amount' | 'q3Amount' | 'q4Amount'
-                            const aMonthly = a[monthAmountKeys[monthIndex]] || a[qKey] / 3
-                            const bMonthly = b[monthAmountKeys[monthIndex]] || b[qKey] / 3
-                            return bMonthly - aMonthly
+                            return getBudgetByMonth(b, monthIndex).budget - getBudgetByMonth(a, monthIndex).budget
                           })
                           .map((budget) => {
                             const data = getBudgetByMonth(budget, monthIndex)

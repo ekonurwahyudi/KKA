@@ -24,7 +24,7 @@ interface Budget {
   janAmount: number; febAmount: number; marAmount: number; aprAmount: number
   mayAmount: number; junAmount: number; julAmount: number; augAmount: number
   sepAmount: number; octAmount: number; novAmount: number; decAmount: number
-  glAccount: GlAccount; allocations: { regionalCode: string; quarter: number; amount: number; percentage: number }[]
+  glAccount: GlAccount; allocations: { regionalCode: string; quarter: number; amount: number; rraDelta?: number; percentage: number }[]
 }
 
 type InputMode = 'quarter' | 'month'
@@ -223,6 +223,15 @@ export default function BudgetPage() {
       })
     }
     setAllocations(allocs); setPercentages(pcts)
+  }
+
+  const getRraDelta = (quarter: number, regionalCode: string) => {
+    const allocation = selectedBudget?.allocations.find(a => a.quarter === quarter && a.regionalCode === regionalCode)
+    return Number(allocation?.rraDelta || 0)
+  }
+
+  const getEffectiveAllocation = (quarter: number, regionalCode: string) => {
+    return Number(allocations[`q${quarter}_${regionalCode}`] || 0) + getRraDelta(quarter, regionalCode)
   }
 
   const autoSplitRegional = (quarter: number) => {
@@ -541,7 +550,10 @@ export default function BudgetPage() {
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      {regionals.map((reg: Regional) => (
+                      {regionals.map((reg: Regional) => {
+                        const rraDelta = getRraDelta(q, reg.code)
+                        const effectiveAllocation = getEffectiveAllocation(q, reg.code)
+                        return (
                         <div key={reg.id} className="p-3 border rounded-lg bg-gray-50/50 space-y-2">
                           <Label className="text-sm font-medium">{reg.name}</Label>
                           <div className="grid grid-cols-3 gap-2">
@@ -551,8 +563,18 @@ export default function BudgetPage() {
                               <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
                             </div>
                           </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="text-muted-foreground">RRA</span>
+                              <p className={`font-semibold ${rraDelta >= 0 ? 'text-green-600' : 'text-red-600'}`}>Rp {rraDelta.toLocaleString('id-ID')}</p>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-muted-foreground">Berjalan</span>
+                              <p className="font-semibold">Rp {effectiveAllocation.toLocaleString('id-ID')}</p>
+                            </div>
+                          </div>
                         </div>
-                      ))}
+                      )})}
                     </div>
                     <div className="pt-4 border-t space-y-2">
                       <div className="flex justify-between text-sm">
@@ -563,12 +585,12 @@ export default function BudgetPage() {
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Total Alokasi</span>
-                        <span className="font-semibold">Rp {regionals.reduce((sum: number, reg: Regional) => sum + (allocations[`q${q}_${reg.code}`] || 0), 0).toLocaleString('id-ID')}</span>
+                        <span className="font-semibold">Rp {regionals.reduce((sum: number, reg: Regional) => sum + getEffectiveAllocation(q, reg.code), 0).toLocaleString('id-ID')}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Sisa</span>
-                        <span className={`font-semibold ${(selectedBudget[`q${q}Amount` as keyof Budget] as number) - regionals.reduce((sum: number, reg: Regional) => sum + (allocations[`q${q}_${reg.code}`] || 0), 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          Rp {((selectedBudget[`q${q}Amount` as keyof Budget] as number) - regionals.reduce((sum: number, reg: Regional) => sum + (allocations[`q${q}_${reg.code}`] || 0), 0)).toLocaleString('id-ID')}
+                        <span className={`font-semibold ${(selectedBudget[`q${q}Amount` as keyof Budget] as number) - regionals.reduce((sum: number, reg: Regional) => sum + getEffectiveAllocation(q, reg.code), 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          Rp {((selectedBudget[`q${q}Amount` as keyof Budget] as number) - regionals.reduce((sum: number, reg: Regional) => sum + getEffectiveAllocation(q, reg.code), 0)).toLocaleString('id-ID')}
                         </span>
                       </div>
                     </div>
