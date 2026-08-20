@@ -140,13 +140,6 @@ export default function DashboardPage() {
       .reduce((sum, line) => sum + Number(line.amount || 0), 0)
   }
 
-  const getRraMovementByMonth = (budget: Budget, month: number) => {
-    return (budget.rraLines || [])
-      .filter(line => !isAbsorbedRraLine(line))
-      .filter(line => getRraLineMonth(line) === month)
-      .reduce((sum, line) => sum + Number(line.rraAmount || 0), 0)
-  }
-
   const getEffectiveTotalBudget = (budget: Budget) => {
     return [1, 2, 3, 4].reduce((sum, quarter) => sum + getEffectiveQuarterBudget(budget, quarter), 0)
   }
@@ -194,8 +187,7 @@ export default function DashboardPage() {
     
     // If no monthly budget set, fallback to quarter divided by 3
     const quarter = Math.ceil((month + 1) / 3)
-    const baseBudget = monthlyBudget > 0 ? monthlyBudget : getEffectiveQuarterBudget(budget, quarter) / 3
-    const effectiveBudget = baseBudget + getRraMovementByMonth(budget, month)
+    const baseBudget = monthlyBudget > 0 ? monthlyBudget : Number(budget[`q${quarter}Amount` as 'q1Amount' | 'q2Amount' | 'q3Amount' | 'q4Amount'] || 0) / 3
     
     // Hitung penggunaan per bulan - use tanggalKwitansi to determine the month
     const monthUsed = transactions
@@ -208,7 +200,7 @@ export default function DashboardPage() {
       .reduce((sum, t) => sum + t.nilaiTanpaPPN, 0)
     const rraUsed = getRraAbsorptionByMonth(budget, month)
     
-    return { budget: effectiveBudget, used: monthUsed + rraUsed, remaining: effectiveBudget - monthUsed - rraUsed }
+    return { budget: baseBudget, used: monthUsed + rraUsed, remaining: baseBudget - monthUsed - rraUsed }
   }
 
   // Data untuk monitoring chart
