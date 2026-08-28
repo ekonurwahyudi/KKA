@@ -108,10 +108,16 @@ export default function DashboardPage() {
 
   const getEffectiveQuarterBudget = (budget: Budget, quarter: number) => {
     const qKey = `q${quarter}Amount` as 'q1Amount' | 'q2Amount' | 'q3Amount' | 'q4Amount'
-    const rraDelta = (budget.rraLines || [])
-      .filter(line => Math.ceil((line.rraLog?.month || 1) / 3) === quarter && !isAbsorbedRraLine(line))
-      .reduce((sum, line) => sum + Number(line.rraAmount || 0), 0)
-    return Number(budget[qKey] || 0) + rraDelta
+    const rraDelta = getQuarterRraDelta(budget, quarter)
+    // Nilai dasar tetap ditampilkan pada donor. Hanya RRA bersih positif yang
+    // menambah anggaran; RRA negatif dicatat sebagai penggunaan.
+    return Number(budget[qKey] || 0) + Math.max(rraDelta, 0)
+  }
+
+  const getQuarterRraDelta = (budget: Budget, quarter: number) => {
+    return (budget.allocations || [])
+      .filter(allocation => allocation.quarter === quarter)
+      .reduce((sum, allocation) => sum + Number(allocation.rraDelta || 0), 0)
   }
 
   const isHoLine = (line?: Pick<RraLine, 'regionalCode' | 'regionalName' | 'costCenter'> | null) => {
@@ -119,25 +125,27 @@ export default function DashboardPage() {
     return marker.includes('HO')
   }
 
-  const isAbsorbedRraLine = (line: RraLine) => {
-    if (line.side !== 'DONOR' || !isHoLine(line)) return false
-    return (line.rraLog?.lines || []).some(peer => peer.side === 'PENERIMA' && !isHoLine(peer))
-  }
-
   const getRraAbsorption = (budget: Budget, quarter?: number) => {
-    return (budget.rraLines || [])
-      .filter(line => isAbsorbedRraLine(line))
-      .filter(line => quarter ? Math.ceil((line.rraLog?.month || 1) / 3) === quarter : true)
-      .reduce((sum, line) => sum + Number(line.amount || 0), 0)
+    const quarters = quarter ? [quarter] : [1, 2, 3, 4]
+    return quarters.reduce((sum, currentQuarter) => (
+      sum + Math.max(-getQuarterRraDelta(budget, currentQuarter), 0)
+    ), 0)
   }
 
   const getRraLineMonth = (line: RraLine) => Number(line.rraLog?.month || 1) - 1
 
   const getRraAbsorptionByMonth = (budget: Budget, month: number) => {
-    return (budget.rraLines || [])
-      .filter(line => isAbsorbedRraLine(line))
+    const delta = (budget.rraLines || [])
       .filter(line => getRraLineMonth(line) === month)
-      .reduce((sum, line) => sum + Number(line.amount || 0), 0)
+      .reduce((sum, line) => sum + Number(line.rraAmount || 0), 0)
+    return Math.max(-delta, 0)
+  }
+
+  const getRraAdditionByMonth = (budget: Budget, month: number) => {
+    const delta = (budget.rraLines || [])
+      .filter(line => getRraLineMonth(line) === month)
+      .reduce((sum, line) => sum + Number(line.rraAmount || 0), 0)
+    return Math.max(delta, 0)
   }
 
   const getEffectiveTotalBudget = (budget: Budget) => {
@@ -188,6 +196,7 @@ export default function DashboardPage() {
     // If no monthly budget set, fallback to quarter divided by 3
     const quarter = Math.ceil((month + 1) / 3)
     const baseBudget = monthlyBudget > 0 ? monthlyBudget : Number(budget[`q${quarter}Amount` as 'q1Amount' | 'q2Amount' | 'q3Amount' | 'q4Amount'] || 0) / 3
+    const effectiveBudget = baseBudget + getRraAdditionByMonth(budget, month)
     
     // Hitung penggunaan per bulan - use tanggalKwitansi to determine the month
     const monthUsed = transactions
@@ -200,7 +209,7 @@ export default function DashboardPage() {
       .reduce((sum, t) => sum + t.nilaiTanpaPPN, 0)
     const rraUsed = getRraAbsorptionByMonth(budget, month)
     
-    return { budget: baseBudget, used: monthUsed + rraUsed, remaining: baseBudget - monthUsed - rraUsed }
+    return { budget: effectiveBudget, used: monthUsed + rraUsed, remaining: effectiveBudget - monthUsed - rraUsed }
   }
 
   // Data untuk monitoring chart
@@ -230,11 +239,9 @@ export default function DashboardPage() {
       : budgets.filter((budget: Budget) => budget.glAccountId === selectedGlAccount)
 
     filteredBudgets.forEach((budget) => {
-      ;(budget.rraLines || [])
-        .filter(line => isAbsorbedRraLine(line))
-        .forEach(line => {
-          monthlyData[getRraLineMonth(line)].totalNilai += Number(line.amount || 0)
-        })
+      monthNames.forEach((_, month) => {
+        monthlyData[month].totalNilai += getRraAbsorptionByMonth(budget, month)
+      })
     })
 
     return monthlyData

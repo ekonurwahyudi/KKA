@@ -83,28 +83,15 @@ export default function ReportPage() {
 
   const summaryData = (): SummaryRow[] => {
     const summary: SummaryRow[] = []
-    const isHoLine = (line?: Pick<RraLine, 'regionalCode' | 'regionalName' | 'costCenter'> | null) => {
-      const marker = `${line?.regionalCode || ''} ${line?.regionalName || ''} ${line?.costCenter || ''}`.toUpperCase()
-      return marker.includes('HO')
-    }
-    const isAbsorbedRraLine = (line: RraLine) => {
-      if (line.side !== 'DONOR' || !isHoLine(line)) return false
-      return (line.rraLog?.lines || []).some(peer => peer.side === 'PENERIMA' && !isHoLine(peer))
-    }
-    const getRraLineQuarter = (line: RraLine) => Math.ceil((line.rraLog?.month || 1) / 3)
     ;(budgets as Budget[]).forEach((budget) => {
       budget.allocations.forEach((alloc) => {
         const used = (transactions as Transaction[])
           .filter(t => t.glAccountId === budget.glAccountId && t.quarter === alloc.quarter && t.regionalCode === alloc.regionalCode)
           .reduce((sum, t) => sum + t.nilaiKwitansi, 0)
-        const rraUsed = (budget.rraLines || [])
-          .filter(line => line.regionalCode === alloc.regionalCode && getRraLineQuarter(line) === alloc.quarter && isAbsorbedRraLine(line))
-          .reduce((sum, line) => sum + Number(line.amount || 0), 0)
-        const rraMovement = (budget.rraLines || [])
-          .filter(line => line.regionalCode === alloc.regionalCode && getRraLineQuarter(line) === alloc.quarter && !isAbsorbedRraLine(line))
-          .reduce((sum, line) => sum + Number(line.rraAmount || 0), 0)
+        const rraDelta = Number(alloc.rraDelta || 0)
+        const rraUsed = Math.max(-rraDelta, 0)
         const reg = (regionals as Regional[]).find(r => r.code === alloc.regionalCode)
-        const allocated = Number(alloc.amount || 0) + rraMovement
+        const allocated = Number(alloc.amount || 0) + Math.max(rraDelta, 0)
         const row: SummaryRow = {
           key: `${budget.glAccount.code}-Q${alloc.quarter}-${alloc.regionalCode}`,
           glCode: budget.glAccount.code, quarter: alloc.quarter, regionalCode: alloc.regionalCode,

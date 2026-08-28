@@ -105,15 +105,16 @@ export default function BudgetPage() {
   const isLoading = loadingGl || loadingRegionals || loadingBudgets
 
   const getAllocationRegionals = (budget: Budget | null = selectedBudget): Regional[] => {
-    if ((regionals as Regional[]).length > 0) return regionals as Regional[]
-    if (!budget) return []
+    const masterRegionals = (regionals as Regional[]).length > 0 ? regionals as Regional[] : defaultRegionals
+    if (!budget) return masterRegionals
 
-    const codes = Array.from(new Set((budget.allocations || []).map((allocation) => allocation.regionalCode)))
-    if (codes.length === 0) return defaultRegionals
-
-    const allocationRegionals = codes.map((code) => ({ id: code, code, name: code }))
-    const missingDefaults = defaultRegionals.filter((regional) => !codes.includes(regional.code))
-    return [...allocationRegionals, ...missingDefaults]
+    // Jangan sembunyikan alokasi lama ketika kode regional pada master berubah.
+    // Record tersembunyi sebelumnya membuat jumlah database berbeda dari UI.
+    const knownCodes = new Set(masterRegionals.map((regional) => regional.code))
+    const legacyRegionals = Array.from(new Set((budget.allocations || []).map((allocation) => allocation.regionalCode)))
+      .filter((code) => !knownCodes.has(code))
+      .map((code) => ({ id: code, code, name: `${code} (regional lama)` }))
+    return [...masterRegionals, ...legacyRegionals]
   }
 
   // Calculate quarters from months
@@ -321,6 +322,14 @@ export default function BudgetPage() {
       allocationRegionals.forEach((reg: Regional) => {
         allocs.push({ budgetId: selectedBudget.id, quarter: q, regionalCode: reg.code, amount: allocations[`q${q}_${reg.code}`] || 0, percentage: percentages[`q${q}_${reg.code}`] || 0 })
       })
+    }
+    for (let q = 1; q <= 4; q++) {
+      const expected = Number(selectedBudget[`q${q}Amount` as keyof Budget] || 0)
+      const total = allocationRegionals.reduce((sum, reg) => sum + Number(allocations[`q${q}_${reg.code}`] || 0), 0)
+      if (total !== expected) {
+        showMessage('error', `Total alokasi dasar Q${q} harus Rp ${expected.toLocaleString('id-ID')}`)
+        return
+      }
     }
     try {
       await saveAllocations.mutateAsync(allocs)

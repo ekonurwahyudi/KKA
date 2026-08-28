@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { format } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
-import { ArrowRightLeft, CheckCircle, Download, Plus, Save, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, CheckCircle, Download, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { TableSkeleton } from '@/components/loading'
 import { useBudgets } from '@/lib/hooks/useBudget'
 import { useRegionals } from '@/lib/hooks/useMaster'
-import { useCreateRra, useRraLogs } from '@/lib/hooks/useRra'
+import { useCreateRra, useRraLogs, useUpdateRra } from '@/lib/hooks/useRra'
 
 interface GlAccount { id: string; code: string; description: string }
 interface Regional { id: string; code: string; name: string; costCenter?: string; isActive: boolean }
@@ -56,6 +56,7 @@ export default function RraPage() {
   const [sourceLines, setSourceLines] = useState<RraInputLine[]>([newLine()])
   const [targetLines, setTargetLines] = useState<RraInputLine[]>([newLine()])
   const [description, setDescription] = useState('')
+  const [editingLogId, setEditingLogId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState<'success' | 'error'>('success')
 
@@ -63,8 +64,9 @@ export default function RraPage() {
   const { data: regionals = [], isLoading: loadingRegionals } = useRegionals()
   const { data: rraLogs = [], isLoading: loadingRra } = useRraLogs(year)
   const createRra = useCreateRra()
+  const updateRra = useUpdateRra()
 
-  const activeRegionals = useMemo(() => (regionals as Regional[]).filter(r => r.isActive).sort((a, b) => (a.costCenter || a.code).localeCompare(b.costCenter || b.code)), [regionals])
+  const activeRegionals = useMemo(() => (regionals as Regional[]).filter(r => r.isActive !== false).sort((a, b) => (a.costCenter || a.code).localeCompare(b.costCenter || b.code)), [regionals])
   const selectedMonth = parseInt(month)
   const selectedQuarter = quarterFromMonth(selectedMonth)
   const totalSource = sourceLines.reduce((sum, line) => sum + (line.amount || 0), 0)
@@ -96,6 +98,7 @@ export default function RraPage() {
     setSourceLines([newLine()])
     setTargetLines([newLine()])
     setDescription('')
+    setEditingLogId(null)
   }
 
   const validateLines = (lines: RraInputLine[]) => lines.every(line => line.budgetId && line.regionalCode && line.amount > 0)
@@ -132,6 +135,27 @@ export default function RraPage() {
     )
   }
 
+  const historyInputLines = (log: RraLog, side: 'DONOR' | 'PENERIMA'): RraInputLine[] => {
+    const lines = (log.lines || []).filter(line => line.side === side)
+    const data = lines.length > 0 ? lines : [fallbackLine(log, side)]
+    return data
+      .filter(line => line.budgetId && line.regionalCode && line.amount > 0)
+      .map(line => ({ id: newLine().id, budgetId: line.budgetId, regionalCode: line.regionalCode, amount: Number(line.amount || 0) }))
+  }
+
+  const startEdit = (log: RraLog) => {
+    const donors = historyInputLines(log, 'DONOR')
+    const receivers = historyInputLines(log, 'PENERIMA')
+    setEditingLogId(log.id)
+    setType(log.type)
+    setMonth(String(log.month))
+    setSourceLines(donors.length > 0 ? donors : [newLine()])
+    setTargetLines(receivers.length > 0 ? receivers : [newLine()])
+    setDescription(log.description || '')
+    showMessage('success', 'Mode edit aktif. Ubah data lalu klik Update Batch RRA.')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const submitRra = async () => {
     if (!validateLines(sourceLines) || !validateLines(targetLines)) {
       showMessage('error', 'Semua baris donor dan penerima wajib lengkap')
@@ -148,18 +172,24 @@ export default function RraPage() {
       }
     }
     try {
-      await createRra.mutateAsync({
+      const payload = {
         year,
         type,
         month: selectedMonth,
         sourceLines: sourceLines.map(({ budgetId, regionalCode, amount }) => ({ budgetId, regionalCode, amount })),
         targetLines: targetLines.map(({ budgetId, regionalCode, amount }) => ({ budgetId, regionalCode, amount })),
         description,
-      })
+      }
+
+      if (editingLogId) {
+        await updateRra.mutateAsync({ id: editingLogId, data: payload })
+      } else {
+        await createRra.mutateAsync(payload)
+      }
       resetForm()
-      showMessage('success', 'Batch RRA berhasil dicatat dan anggaran diperbarui')
+      showMessage('success', editingLogId ? 'Batch RRA berhasil diubah dan anggaran diperbarui' : 'Batch RRA berhasil dicatat dan anggaran diperbarui')
     } catch (error: any) {
-      showMessage('error', error?.response?.data?.error || 'Gagal menyimpan RRA')
+      showMessage('error', error?.response?.data?.error || (editingLogId ? 'Gagal mengubah RRA' : 'Gagal menyimpan RRA'))
     }
   }
 
@@ -220,7 +250,20 @@ export default function RraPage() {
     { id: 'donor', header: 'Donor', cell: ({ row }) => formatHistoryLines(row.original, 'DONOR') },
     { id: 'receiver', header: 'Penerima', cell: ({ row }) => formatHistoryLines(row.original, 'PENERIMA') },
     { accessorKey: 'amount', header: () => <div className="text-right">Total RRA</div>, cell: ({ row }) => <div className="text-right font-semibold">{formatCurrency(row.original.amount)}</div> },
-    { id: 'download', header: 'Excel', cell: ({ row }) => <Button variant="outline" size="sm" onClick={() => { window.location.href = `/api/rra/${row.original.id}/excel` }}><Download className="h-4 w-4" /></Button> },
+    {
+      id: 'actions',
+      header: 'Aksi',
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => startEdit(row.original)} title="Edit RRA">
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { window.location.href = `/api/rra/${row.original.id}/excel` }} title="Unduh Excel">
+            <Download className="h-4 w-4" />
+          </Button>
+        </div>
+      ),
+    },
   ]
 
   if (loadingBudgets || loadingRegionals || loadingRra) {
@@ -247,7 +290,7 @@ export default function RraPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base md:text-lg"><ArrowRightLeft className="h-5 w-5" />Form Batch RRA</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base md:text-lg"><ArrowRightLeft className="h-5 w-5" />{editingLogId ? 'Edit Batch RRA' : 'Form Batch RRA'}</CardTitle>
           <CardDescription>Total donor dan penerima harus sama sebelum batch RRA dapat disimpan</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -310,7 +353,11 @@ export default function RraPage() {
 
           <div className="flex justify-end gap-2 border-t pt-4">
             <Button variant="outline" onClick={resetForm}>Reset</Button>
-            <Button onClick={submitRra} disabled={createRra.isPending || Math.abs(selisih) > 0.01} className="gap-2"><Save className="h-4 w-4" />{createRra.isPending ? 'Menyimpan...' : 'Simpan Batch RRA'}</Button>
+            {editingLogId && <Button variant="outline" onClick={resetForm} className="gap-2"><X className="h-4 w-4" />Batal Edit</Button>}
+            <Button onClick={submitRra} disabled={createRra.isPending || updateRra.isPending || Math.abs(selisih) > 0.01} className="gap-2">
+              <Save className="h-4 w-4" />
+              {createRra.isPending || updateRra.isPending ? 'Menyimpan...' : editingLogId ? 'Update Batch RRA' : 'Simpan Batch RRA'}
+            </Button>
           </div>
         </CardContent>
       </Card>

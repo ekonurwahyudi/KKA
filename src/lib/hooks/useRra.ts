@@ -29,3 +29,16 @@ export const useCreateRra = () => {
     },
   })
 }
+
+export const useUpdateRra = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => await api.put(`/rra/${id}`, data),
+    onSuccess: (_, variables) => {
+      const year = variables.data.year as number
+      queryClient.invalidateQueries({ queryKey: rraKeys.byYear(year) })
+      queryClient.invalidateQueries({ queryKey: budgetKeys.byYear(year) })
+      queryClient.invalidateQueries({ queryKey: budgetKeys.all })
+    },
+  })
+}

@@ -37,25 +37,9 @@ export async function GET(req: NextRequest) {
       (a) => a.regionalCode === regionalCode && a.quarter === quarter
     )
 
-    const isHoLine = (line?: any) => {
-      const marker = `${line?.regionalCode || ''} ${line?.regionalName || ''} ${line?.costCenter || ''}`.toUpperCase()
-      return marker.includes('HO')
-    }
-    const isAbsorbedRraLine = (line: any) => {
-      if (line.side !== 'DONOR' || !isHoLine(line)) return false
-      return (line.rraLog?.lines || []).some((peer: any) => peer.side === 'PENERIMA' && !isHoLine(peer))
-    }
-    const rraLines = ((budget as any).rraLines || []).filter((line: any) => (
-      line.regionalCode === regionalCode && Math.ceil((line.rraLog?.month || 1) / 3) === quarter
-    ))
-    const rraMovement = rraLines
-      .filter((line: any) => !isAbsorbedRraLine(line))
-      .reduce((sum: number, line: any) => sum + Number(line.rraAmount || 0), 0)
-    const rraUsed = rraLines
-      .filter((line: any) => isAbsorbedRraLine(line))
-      .reduce((sum: number, line: any) => sum + Number(line.amount || 0), 0)
-
-    const allocated = Number(allocation?.amount || 0) + rraMovement
+    const rraDelta = Number(allocation?.rraDelta || 0)
+    const rraUsed = Math.max(-rraDelta, 0)
+    const allocated = Number(allocation?.amount || 0) + Math.max(rraDelta, 0)
 
     // Calculate date range for the quarter
     const quarterStartMonth = (quarter - 1) * 3 // 0, 3, 6, 9
