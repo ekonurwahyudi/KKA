@@ -88,10 +88,18 @@ export default function ReportPage() {
         const used = (transactions as Transaction[])
           .filter(t => t.glAccountId === budget.glAccountId && t.quarter === alloc.quarter && t.regionalCode === alloc.regionalCode)
           .reduce((sum, t) => sum + t.nilaiKwitansi, 0)
-        const rraDelta = Number(alloc.rraDelta || 0)
-        const rraUsed = Math.max(-rraDelta, 0)
+        const rraLines = (budget.rraLines || []).filter(line => (
+          line.regionalCode === alloc.regionalCode
+          && Math.ceil((line.rraLog?.month || 1) / 3) === alloc.quarter
+        ))
+        const rraIncoming = rraLines
+          .filter(line => line.side === 'PENERIMA')
+          .reduce((sum, line) => sum + Number(line.amount || 0), 0)
+        const rraUsed = rraLines
+          .filter(line => line.side === 'DONOR')
+          .reduce((sum, line) => sum + Number(line.amount || 0), 0)
         const reg = (regionals as Regional[]).find(r => r.code === alloc.regionalCode)
-        const allocated = Number(alloc.amount || 0) + Math.max(rraDelta, 0)
+        const allocated = Number(alloc.amount || 0) + rraIncoming
         const row: SummaryRow = {
           key: `${budget.glAccount.code}-Q${alloc.quarter}-${alloc.regionalCode}`,
           glCode: budget.glAccount.code, quarter: alloc.quarter, regionalCode: alloc.regionalCode,

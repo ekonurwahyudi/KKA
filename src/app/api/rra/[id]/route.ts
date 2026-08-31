@@ -20,6 +20,21 @@ function normalizeLines(lines: any): RraLineInput[] {
     .filter((line) => line.budgetId && line.regionalCode && line.amount > 0)
 }
 
+function isHoRegional(regional: any) {
+  const marker = `${regional?.code || ''} ${regional?.name || ''}`.toUpperCase()
+  return marker.includes('HO')
+}
+
+function hasAreaDonorToHo(
+  sourceLines: RraLineInput[],
+  targetLines: RraLineInput[],
+  regionals: Map<string, any>,
+) {
+  const hasAreaDonor = sourceLines.some((line) => !isHoRegional(regionals.get(line.regionalCode)))
+  const hasHoReceiver = targetLines.some((line) => isHoRegional(regionals.get(line.regionalCode)))
+  return hasAreaDonor && hasHoReceiver
+}
+
 function budgetSnapshot(budget: any) {
   return {
     id: budget.id,
@@ -192,6 +207,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         const regional = await getRegional(tx, regionalCode)
         if (!regional) throw new Error('Regional donor atau penerima tidak ditemukan')
         regionals.set(regionalCode, regional)
+      }
+
+      if (hasAreaDonorToHo(sourceLines, targetLines, regionals)) {
+        throw new Error('RRA dari Area ke HO tidak diperbolehkan')
       }
 
       const beforeSnapshot = Object.fromEntries(

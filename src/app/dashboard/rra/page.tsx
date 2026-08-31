@@ -48,6 +48,7 @@ const quarterFromMonth = (month: number) => Math.ceil(month / 3)
 const budgetLabel = (budget?: Budget) => budget ? `${budget.glAccount.code} - ${budget.glAccount.description}` : ''
 const regionalLabel = (regional?: Regional) => regional ? `${regional.costCenter || regional.code} - ${regional.name}` : ''
 const newLine = (): RraInputLine => ({ id: `${Date.now()}-${Math.random()}`, budgetId: '', regionalCode: '', amount: 0 })
+const isHoRegional = (regional?: Regional) => `${regional?.code || ''} ${regional?.name || ''}`.toUpperCase().includes('HO')
 
 export default function RraPage() {
   const [year, setYear] = useState(new Date().getFullYear())
@@ -102,6 +103,12 @@ export default function RraPage() {
   }
 
   const validateLines = (lines: RraInputLine[]) => lines.every(line => line.budgetId && line.regionalCode && line.amount > 0)
+  const hasAreaDonorToHo = () => {
+    const regionalList = regionals as Regional[]
+    const hasAreaDonor = sourceLines.some(line => !isHoRegional(regionalList.find(regional => regional.code === line.regionalCode)))
+    const hasHoReceiver = targetLines.some(line => isHoRegional(regionalList.find(regional => regional.code === line.regionalCode)))
+    return hasAreaDonor && hasHoReceiver
+  }
 
   const fallbackLine = (log: RraLog, side: 'DONOR' | 'PENERIMA'): RraLine => {
     const isDonor = side === 'DONOR'
@@ -163,6 +170,10 @@ export default function RraPage() {
     }
     if (Math.abs(selisih) > 0.01) {
       showMessage('error', 'Total donor harus sama dengan total penerima')
+      return
+    }
+    if (hasAreaDonorToHo()) {
+      showMessage('error', 'RRA dari Area ke HO tidak diperbolehkan')
       return
     }
     for (const line of sourceLines) {

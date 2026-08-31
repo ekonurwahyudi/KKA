@@ -37,9 +37,16 @@ export async function GET(req: NextRequest) {
       (a) => a.regionalCode === regionalCode && a.quarter === quarter
     )
 
-    const rraDelta = Number(allocation?.rraDelta || 0)
-    const rraUsed = Math.max(-rraDelta, 0)
-    const allocated = Number(allocation?.amount || 0) + Math.max(rraDelta, 0)
+    const rraLines = ((budget as any).rraLines || []).filter((line: any) => (
+      line.regionalCode === regionalCode && Math.ceil((line.rraLog?.month || 1) / 3) === quarter
+    ))
+    const rraIncoming = rraLines
+      .filter((line: any) => line.side === 'PENERIMA')
+      .reduce((sum: number, line: any) => sum + Number(line.amount || 0), 0)
+    const rraUsed = rraLines
+      .filter((line: any) => line.side === 'DONOR')
+      .reduce((sum: number, line: any) => sum + Number(line.amount || 0), 0)
+    const allocated = Number(allocation?.amount || 0) + rraIncoming
 
     // Calculate date range for the quarter
     const quarterStartMonth = (quarter - 1) * 3 // 0, 3, 6, 9

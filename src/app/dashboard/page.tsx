@@ -108,16 +108,17 @@ export default function DashboardPage() {
 
   const getEffectiveQuarterBudget = (budget: Budget, quarter: number) => {
     const qKey = `q${quarter}Amount` as 'q1Amount' | 'q2Amount' | 'q3Amount' | 'q4Amount'
-    const rraDelta = getQuarterRraDelta(budget, quarter)
-    // Nilai dasar tetap ditampilkan pada donor. Hanya RRA bersih positif yang
-    // menambah anggaran; RRA negatif dicatat sebagai penggunaan.
-    return Number(budget[qKey] || 0) + Math.max(rraDelta, 0)
+    return Number(budget[qKey] || 0) + getQuarterRraTotals(budget, quarter).incoming
   }
 
-  const getQuarterRraDelta = (budget: Budget, quarter: number) => {
-    return (budget.allocations || [])
-      .filter(allocation => allocation.quarter === quarter)
-      .reduce((sum, allocation) => sum + Number(allocation.rraDelta || 0), 0)
+  const getQuarterRraTotals = (budget: Budget, quarter: number) => {
+    return (budget.rraLines || [])
+      .filter(line => Math.ceil((line.rraLog?.month || 1) / 3) === quarter)
+      .reduce((totals, line) => {
+        if (line.side === 'PENERIMA') totals.incoming += Number(line.amount || 0)
+        if (line.side === 'DONOR') totals.outgoing += Number(line.amount || 0)
+        return totals
+      }, { incoming: 0, outgoing: 0 })
   }
 
   const isHoLine = (line?: Pick<RraLine, 'regionalCode' | 'regionalName' | 'costCenter'> | null) => {
@@ -128,24 +129,24 @@ export default function DashboardPage() {
   const getRraAbsorption = (budget: Budget, quarter?: number) => {
     const quarters = quarter ? [quarter] : [1, 2, 3, 4]
     return quarters.reduce((sum, currentQuarter) => (
-      sum + Math.max(-getQuarterRraDelta(budget, currentQuarter), 0)
+      sum + getQuarterRraTotals(budget, currentQuarter).outgoing
     ), 0)
   }
 
   const getRraLineMonth = (line: RraLine) => Number(line.rraLog?.month || 1) - 1
 
   const getRraAbsorptionByMonth = (budget: Budget, month: number) => {
-    const delta = (budget.rraLines || [])
+    return (budget.rraLines || [])
       .filter(line => getRraLineMonth(line) === month)
-      .reduce((sum, line) => sum + Number(line.rraAmount || 0), 0)
-    return Math.max(-delta, 0)
+      .filter(line => line.side === 'DONOR')
+      .reduce((sum, line) => sum + Number(line.amount || 0), 0)
   }
 
   const getRraAdditionByMonth = (budget: Budget, month: number) => {
-    const delta = (budget.rraLines || [])
+    return (budget.rraLines || [])
       .filter(line => getRraLineMonth(line) === month)
-      .reduce((sum, line) => sum + Number(line.rraAmount || 0), 0)
-    return Math.max(delta, 0)
+      .filter(line => line.side === 'PENERIMA')
+      .reduce((sum, line) => sum + Number(line.amount || 0), 0)
   }
 
   const getEffectiveTotalBudget = (budget: Budget) => {
