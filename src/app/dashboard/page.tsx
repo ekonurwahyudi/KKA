@@ -155,7 +155,9 @@ export default function DashboardPage() {
 
   const totalBudget = budgets.reduce((sum, b) => sum + getEffectiveTotalBudget(b), 0)
   const totalRraAbsorption = budgets.reduce((sum, b) => sum + getRraAbsorption(b), 0)
-  const totalUsed = transactions.reduce((sum: number, t: Transaction) => sum + t.nilaiTanpaPPN, 0) + totalRraAbsorption
+  const totalUsed = transactions.reduce((sum: number, t: Transaction) => sum + t.nilaiTanpaPPN, 0)
+  const totalConsumed = totalRraAbsorption + totalUsed
+  const totalOutlook = totalBudget > 0 ? (totalConsumed / totalBudget) * 100 : 0
 
   // Status counts from rawTransactions (already filtered by year from API)
   const openCount = rawTransactions.filter((t: Transaction) => t.status === 'Open').length
@@ -176,8 +178,8 @@ export default function DashboardPage() {
     const qTransactionUsed = transactions
       .filter(t => getQuarterFromDate(t.tanggalKwitansi) === quarter)
       .reduce((sum, t) => sum + t.nilaiTanpaPPN, 0)
-    const qUsed = qTransactionUsed + budgets.reduce((sum, b) => sum + getRraAbsorption(b, quarter), 0)
-    return { budget: qBudget, used: qUsed, remaining: qBudget - qUsed }
+    const qRra = budgets.reduce((sum, b) => sum + getRraAbsorption(b, quarter), 0)
+    return { budget: qBudget, rra: qRra, used: qTransactionUsed, remaining: qBudget - qRra - qTransactionUsed }
   }
 
   const getBudgetByQuarter = (budget: Budget, quarter: number) => {
@@ -185,8 +187,8 @@ export default function DashboardPage() {
     const qTransactionUsed = transactions
       .filter(t => t.glAccountId === budget.glAccountId && getQuarterFromDate(t.tanggalKwitansi) === quarter)
       .reduce((sum, t) => sum + t.nilaiTanpaPPN, 0)
-    const qUsed = qTransactionUsed + getRraAbsorption(budget, quarter)
-    return { budget: qBudget, used: qUsed, remaining: qBudget - qUsed }
+    const qRra = getRraAbsorption(budget, quarter)
+    return { budget: qBudget, rra: qRra, used: qTransactionUsed, remaining: qBudget - qRra - qTransactionUsed }
   }
 
   const getBudgetByMonth = (budget: Budget, month: number) => {
@@ -210,7 +212,7 @@ export default function DashboardPage() {
       .reduce((sum, t) => sum + t.nilaiTanpaPPN, 0)
     const rraUsed = getRraAbsorptionByMonth(budget, month)
     
-    return { budget: effectiveBudget, used: monthUsed + rraUsed, remaining: effectiveBudget - monthUsed - rraUsed }
+    return { budget: effectiveBudget, rra: rraUsed, used: monthUsed, remaining: effectiveBudget - monthUsed - rraUsed }
   }
 
   // Data untuk monitoring chart
@@ -219,7 +221,8 @@ export default function DashboardPage() {
     const monthlyData = monthNames.map((name) => ({
       month: name,
       jumlahPencatatan: 0,
-      totalNilai: 0
+      totalNilai: 0,
+      totalRra: 0,
     }))
 
     const filteredTransactions = selectedGlAccount === 'all' 
@@ -241,7 +244,7 @@ export default function DashboardPage() {
 
     filteredBudgets.forEach((budget) => {
       monthNames.forEach((_, month) => {
-        monthlyData[month].totalNilai += getRraAbsorptionByMonth(budget, month)
+        monthlyData[month].totalRra += getRraAbsorptionByMonth(budget, month)
       })
     })
 
@@ -254,8 +257,12 @@ export default function DashboardPage() {
       color: "#ef4444",
     },
     totalNilai: {
-      label: "Total Pengeluaran",
+      label: "Pencatatan Terpakai",
       color: "#22c55e",
+    },
+    totalRra: {
+      label: "RRA",
+      color: "#f59e0b",
     },
   } satisfies ChartConfig
 
@@ -445,7 +452,7 @@ export default function DashboardPage() {
       </div>
       
       {/* Budget Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
         <Card className="border">
           <CardContent className="p-3 md:p-5">
             <div className="flex items-start justify-between">
@@ -456,6 +463,14 @@ export default function DashboardPage() {
               <div className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
                 <Wallet className="h-4 w-4 md:h-5 md:w-5 text-green-500" />
               </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border">
+          <CardContent className="p-3 md:p-5">
+            <div className="space-y-1 md:space-y-2">
+              <p className="text-[10px] md:text-xs font-medium text-muted-foreground uppercase tracking-wide">TOTAL RRA</p>
+              <p className="text-sm md:text-2xl font-bold truncate text-amber-600">{totalRraAbsorption.toLocaleString('id-ID')}</p>
             </div>
           </CardContent>
         </Card>
@@ -477,11 +492,19 @@ export default function DashboardPage() {
             <div className="flex items-start justify-between">
               <div className="space-y-1 md:space-y-2 min-w-0 flex-1">
                 <p className="text-[10px] md:text-xs font-medium text-muted-foreground uppercase tracking-wide">SISA ANGGARAN</p>
-                <p className="text-sm md:text-2xl font-bold truncate">{(totalBudget - totalUsed).toLocaleString('id-ID')}</p>
+                <p className="text-sm md:text-2xl font-bold truncate">{(totalBudget - totalConsumed).toLocaleString('id-ID')}</p>
               </div>
               <div className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
                 <Clock className="h-5 w-5 text-purple-500" />
               </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border">
+          <CardContent className="p-3 md:p-5">
+            <div className="space-y-1 md:space-y-2">
+              <p className="text-[10px] md:text-xs font-medium text-muted-foreground uppercase tracking-wide">OUTLOOK</p>
+              <p className="text-sm md:text-2xl font-bold truncate">{totalOutlook.toFixed(1)}%</p>
             </div>
           </CardContent>
         </Card>
@@ -504,13 +527,14 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         {[1, 2, 3, 4].map((q) => {
           const data = getQuarterData(q)
-          const penyerapan = data.budget > 0 ? (data.used / data.budget) * 100 : 0
+          const penyerapan = data.budget > 0 ? ((data.rra + data.used) / data.budget) * 100 : 0
           return (
             <ChartRadial
               key={q}
               quarter={q}
               percentage={penyerapan}
               anggaran={data.budget}
+              rra={data.rra}
               terpakai={data.used}
               sisa={data.remaining}
             />
@@ -565,6 +589,7 @@ export default function DashboardPage() {
                         <TableHead>GL Account</TableHead>
                         <TableHead>Deskripsi</TableHead>
                         <TableHead className="text-right">Anggaran Q{q} (Rp)</TableHead>
+                        <TableHead className="text-right">RRA (Rp)</TableHead>
                         <TableHead className="text-right">Terpakai (Rp)</TableHead>
                         <TableHead className="text-right">Sisa (Rp)</TableHead>
                         <TableHead className="text-center">Outlook</TableHead>
@@ -577,12 +602,13 @@ export default function DashboardPage() {
                         })
                         .map((budget) => {
                           const data = getBudgetByQuarter(budget, q)
-                          const outlook = data.budget > 0 ? (data.used / data.budget) * 100 : 0
+                          const outlook = data.budget > 0 ? ((data.rra + data.used) / data.budget) * 100 : 0
                           return (
                             <TableRow key={budget.id}>
                               <TableCell className="font-medium">{budget.glAccount.code}</TableCell>
                               <TableCell>{budget.glAccount.description}</TableCell>
                               <TableCell className="text-right">{data.budget.toLocaleString('id-ID')}</TableCell>
+                              <TableCell className="text-right text-amber-600">{data.rra.toLocaleString('id-ID')}</TableCell>
                               <TableCell className="text-right text-red-600">{data.used.toLocaleString('id-ID')}</TableCell>
                               <TableCell className={`text-right font-semibold ${data.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                 {data.remaining.toLocaleString('id-ID')}
@@ -601,7 +627,7 @@ export default function DashboardPage() {
                         })}
                       {budgets.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                             Belum ada data anggaran. Silakan input anggaran terlebih dahulu.
                           </TableCell>
                         </TableRow>
@@ -641,6 +667,7 @@ export default function DashboardPage() {
                           <TableHead>GL Account</TableHead>
                           <TableHead>Deskripsi</TableHead>
                           <TableHead className="text-right">Anggaran {monthNames[monthIndex]} (Rp)</TableHead>
+                          <TableHead className="text-right">RRA (Rp)</TableHead>
                           <TableHead className="text-right">Terpakai (Rp)</TableHead>
                           <TableHead className="text-right">Sisa (Rp)</TableHead>
                           <TableHead className="text-center">Outlook</TableHead>
@@ -653,12 +680,13 @@ export default function DashboardPage() {
                           })
                           .map((budget) => {
                             const data = getBudgetByMonth(budget, monthIndex)
-                            const outlook = data.budget > 0 ? (data.used / data.budget) * 100 : 0
+                            const outlook = data.budget > 0 ? ((data.rra + data.used) / data.budget) * 100 : 0
                             return (
                               <TableRow key={budget.id}>
                                 <TableCell className="font-medium">{budget.glAccount.code}</TableCell>
                                 <TableCell>{budget.glAccount.description}</TableCell>
                                 <TableCell className="text-right">{data.budget.toLocaleString('id-ID')}</TableCell>
+                                <TableCell className="text-right text-amber-600">{data.rra.toLocaleString('id-ID')}</TableCell>
                                 <TableCell className="text-right text-red-600">{data.used.toLocaleString('id-ID')}</TableCell>
                                 <TableCell className={`text-right font-semibold ${data.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                   {data.remaining.toLocaleString('id-ID')}
@@ -677,7 +705,7 @@ export default function DashboardPage() {
                           })}
                         {budgets.length === 0 && (
                           <TableRow>
-                            <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                            <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                               Belum ada data anggaran. Silakan input anggaran terlebih dahulu.
                             </TableCell>
                           </TableRow>
@@ -779,7 +807,9 @@ export default function DashboardPage() {
                         const displayValue = isJumlah 
                           ? `(${item.value})`
                           : `(Rp. ${formatCurrency(item.value)})`
-                        const displayName = isJumlah ? 'Jumlah Pencatatan' : 'Total Pengeluaran'
+                        const displayName = isJumlah
+                          ? 'Jumlah Pencatatan'
+                          : item.dataKey === 'totalRra' ? 'RRA' : 'Pencatatan Terpakai'
                         
                         return (
                           <div key={index} className="flex items-center gap-2 text-sm">
@@ -832,6 +862,21 @@ export default function DashboardPage() {
                 label={{
                   position: 'top',
                   fill: '#22c55e',
+                  fontSize: 11,
+                  formatter: (value: any) => value > 0 ? formatCurrency(value) : ''
+                }}
+              />
+              <Line
+                yAxisId="right"
+                dataKey="totalRra"
+                type="natural"
+                stroke="var(--color-totalRra)"
+                strokeWidth={2}
+                dot={{ fill: "var(--color-totalRra)" }}
+                activeDot={{ r: 6 }}
+                label={{
+                  position: 'bottom',
+                  fill: '#f59e0b',
                   fontSize: 11,
                   formatter: (value: any) => value > 0 ? formatCurrency(value) : ''
                 }}

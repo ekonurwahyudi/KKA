@@ -42,3 +42,15 @@ export const useUpdateRra = () => {
     },
   })
 }
+
+export const useDeleteRra = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id }: { id: string; year: number }) => await api.delete(`/rra/${id}`),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: rraKeys.all })
+      queryClient.invalidateQueries({ queryKey: budgetKeys.byYear(variables.year) })
+      queryClient.invalidateQueries({ queryKey: budgetKeys.all })
+    },
+  })
+}

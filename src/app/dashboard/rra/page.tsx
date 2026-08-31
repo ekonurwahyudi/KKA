@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 import { ArrowRightLeft, CheckCircle, Download, Filter, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { CurrencyInput } from '@/components/ui/currency-input'
@@ -18,7 +19,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { TableSkeleton } from '@/components/loading'
 import { useBudgets } from '@/lib/hooks/useBudget'
 import { useRegionals } from '@/lib/hooks/useMaster'
-import { useCreateRra, useRraLogs, useUpdateRra } from '@/lib/hooks/useRra'
+import { useCreateRra, useDeleteRra, useRraLogs, useUpdateRra } from '@/lib/hooks/useRra'
 
 interface GlAccount { id: string; code: string; description: string }
 interface Regional { id: string; code: string; name: string; costCenter?: string; isActive: boolean }
@@ -62,6 +63,7 @@ export default function RraPage() {
   const [historyYear, setHistoryYear] = useState('all')
   const [historyQuarter, setHistoryQuarter] = useState('all')
   const [historyMonth, setHistoryMonth] = useState('all')
+  const [deleteLog, setDeleteLog] = useState<RraLog | null>(null)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState<'success' | 'error'>('success')
 
@@ -70,6 +72,7 @@ export default function RraPage() {
   const { data: rraLogs = [], isLoading: loadingRra } = useRraLogs('all')
   const createRra = useCreateRra()
   const updateRra = useUpdateRra()
+  const deleteRra = useDeleteRra()
 
   const activeRegionals = useMemo(() => (regionals as Regional[]).filter(r => r.isActive !== false).sort((a, b) => (a.costCenter || a.code).localeCompare(b.costCenter || b.code)), [regionals])
   const selectedMonth = parseInt(month)
@@ -221,6 +224,18 @@ export default function RraPage() {
     }
   }
 
+  const handleDeleteRra = async () => {
+    if (!deleteLog) return
+    try {
+      await deleteRra.mutateAsync({ id: deleteLog.id, year: deleteLog.year })
+      if (editingLogId === deleteLog.id) resetForm()
+      setDeleteLog(null)
+      showMessage('success', 'RRA berhasil dibatalkan dan dihapus dari histori')
+    } catch (error: any) {
+      showMessage('error', error?.response?.data?.error || 'Gagal membatalkan RRA')
+    }
+  }
+
   const renderInputTable = (side: 'source' | 'target', lines: RraInputLine[]) => {
     const isSource = side === 'source'
     return (
@@ -289,6 +304,9 @@ export default function RraPage() {
           </Button>
           <Button variant="outline" size="sm" onClick={() => { window.location.href = `/api/rra/${row.original.id}/excel` }} title="Unduh Excel">
             <Download className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setDeleteLog(row.original)} title="Batalkan dan hapus RRA">
+            <Trash2 className="h-4 w-4 text-red-500" />
           </Button>
         </div>
       ),
@@ -462,6 +480,25 @@ export default function RraPage() {
           />
         </CardContent>
       </Card>
+
+      <AlertDialog open={Boolean(deleteLog)} onOpenChange={(open) => { if (!open && !deleteRra.isPending) setDeleteLog(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Batalkan dan hapus RRA?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteLog
+                ? `${rraLabels[deleteLog.type] || deleteLog.type} sebesar ${formatCurrency(deleteLog.amount)} akan dibatalkan. Dampak anggaran donor dan penerima akan dikembalikan, lalu histori dihapus permanen.`
+                : 'Dampak RRA akan dibatalkan dan histori dihapus permanen.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteRra.isPending}>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteRra} disabled={deleteRra.isPending} className="bg-red-500 hover:bg-red-600">
+              {deleteRra.isPending ? 'Membatalkan...' : 'Ya, Batalkan RRA'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

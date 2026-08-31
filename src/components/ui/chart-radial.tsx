@@ -1,11 +1,10 @@
 "use client"
 
 import {
+  Cell,
   Label,
-  PolarGrid,
-  PolarRadiusAxis,
-  RadialBar,
-  RadialBarChart,
+  Pie,
+  PieChart,
 } from "recharts"
 import {
   Card,
@@ -15,6 +14,8 @@ import {
 } from "@/components/ui/card"
 import {
   ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
 
@@ -22,23 +23,32 @@ interface ChartRadialProps {
   quarter: number
   percentage: number
   anggaran: number
+  rra: number
   terpakai: number
   sisa: number
 }
 
-export function ChartRadial({ quarter, percentage, anggaran, terpakai, sisa }: ChartRadialProps) {
+export function ChartRadial({ quarter, percentage, anggaran, rra, terpakai, sisa }: ChartRadialProps) {
+  const safeRra = Math.max(rra, 0)
+  const safeTerpakai = Math.max(terpakai, 0)
+  const safeSisa = Math.max(sisa, 0)
+  const hasData = safeRra + safeTerpakai + safeSisa > 0
   const chartData = [
-    { 
-      name: "penyerapan", 
-      value: percentage, 
-      fill: percentage >= 80 ? "hsl(142, 76%, 36%)" : percentage >= 40 ? "hsl(48, 96%, 53%)" : "hsl(0, 84%, 60%)"
-    },
+    { name: "RRA", key: "rra", value: safeRra, fill: "hsl(38, 92%, 50%)" },
+    { name: "Terpakai", key: "terpakai", value: safeTerpakai, fill: "hsl(0, 72%, 51%)" },
+    { name: "Sisa", key: "sisa", value: safeSisa, fill: "hsl(215, 16%, 82%)" },
   ]
 
+  // Recharts membutuhkan nilai positif untuk menggambar lingkaran kosong.
+  const displayedData = hasData
+    ? chartData
+    : [{ name: "Belum ada anggaran", key: "kosong", value: 1, fill: "hsl(215, 16%, 82%)" }]
+
   const chartConfig = {
-    penyerapan: {
-      label: "Penyerapan",
-    },
+    rra: { label: "RRA", color: "hsl(38, 92%, 50%)" },
+    terpakai: { label: "Terpakai", color: "hsl(0, 72%, 51%)" },
+    sisa: { label: "Sisa", color: "hsl(215, 16%, 82%)" },
+    kosong: { label: "Belum ada anggaran", color: "hsl(215, 16%, 82%)" },
   } satisfies ChartConfig
 
   return (
@@ -51,22 +61,42 @@ export function ChartRadial({ quarter, percentage, anggaran, terpakai, sisa }: C
           config={chartConfig}
           className="mx-auto aspect-square max-h-[200px]"
         >
-          <RadialBarChart
-            data={chartData}
-            startAngle={90}
-            endAngle={90 + (percentage / 100) * 360}
-            innerRadius={60}
-            outerRadius={90}
-          >
-            <PolarGrid
-              gridType="circle"
-              radialLines={false}
-              stroke="none"
-              className="first:fill-muted last:fill-background"
-              polarRadius={[66, 54]}
+          <PieChart>
+            <ChartTooltip
+              cursor={false}
+              content={
+                <ChartTooltipContent
+                  hideLabel
+                  nameKey="key"
+                  formatter={(
+                    value: number | string,
+                    _name: string,
+                    item: { payload: { name: string } }
+                  ) => (
+                    <div className="flex min-w-[150px] items-center justify-between gap-4">
+                      <span className="text-muted-foreground">{item.payload.name}</span>
+                      <span className="font-mono font-medium tabular-nums">
+                        Rp {Number(value).toLocaleString("id-ID")}
+                      </span>
+                    </div>
+                  )}
+                />
+              }
             />
-            <RadialBar dataKey="value" background cornerRadius={10} />
-            <PolarRadiusAxis tick={false} tickLine={false} axisLine={false}>
+            <Pie
+              data={displayedData}
+              dataKey="value"
+              nameKey="key"
+              startAngle={90}
+              endAngle={-270}
+              innerRadius="58%"
+              outerRadius="88%"
+              strokeWidth={2}
+              paddingAngle={hasData ? 1 : 0}
+            >
+              {displayedData.map((item) => (
+                <Cell key={item.key} fill={item.fill} />
+              ))}
               <Label
                 content={({ viewBox }) => {
                   if (viewBox && "cx" in viewBox && "cy" in viewBox) {
@@ -96,13 +126,17 @@ export function ChartRadial({ quarter, percentage, anggaran, terpakai, sisa }: C
                   }
                 }}
               />
-            </PolarRadiusAxis>
-          </RadialBarChart>
+            </Pie>
+          </PieChart>
         </ChartContainer>
         <div className="mt-1 md:mt-2 space-y-0.5 md:space-y-1">
           <div className="flex justify-between text-[12px] md:text-sm gap-1">
             <span className="text-muted-foreground shrink-0">Anggaran</span>
             <span className="text-blue-600 font-medium truncate">{anggaran.toLocaleString('id-ID')}</span>
+          </div>
+          <div className="flex justify-between text-[12px] md:text-sm gap-1">
+            <span className="text-muted-foreground shrink-0">RRA</span>
+            <span className="text-amber-600 font-medium truncate">{rra.toLocaleString('id-ID')}</span>
           </div>
           <div className="flex justify-between text-[12px] md:text-sm gap-1">
             <span className="text-muted-foreground shrink-0">Terpakai</span>

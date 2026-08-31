@@ -318,3 +318,45 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: error?.message || 'Gagal mengubah RRA' }, { status: 500 })
   }
 }
+
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const deleted = await prisma.$transaction(async (tx: any) => {
+      const log = await tx.budgetRraLog.findUnique({
+        where: { id: params.id },
+        include: { lines: true },
+      })
+      if (!log) throw new Error('Histori RRA tidak ditemukan')
+
+      const quarter = quarterFromMonth(log.month)
+      const reverseDeltas = new Map<string, { budgetId: string; regionalCode: string; delta: number }>()
+      for (const line of existingLines(log) as any[]) {
+        const key = lineKey(line.budgetId, line.regionalCode)
+        const current = reverseDeltas.get(key) || { budgetId: line.budgetId, regionalCode: line.regionalCode, delta: 0 }
+        current.delta += line.side === 'DONOR' ? Number(line.amount || 0) : -Number(line.amount || 0)
+        reverseDeltas.set(key, current)
+      }
+
+      for (const reversal of Array.from(reverseDeltas.values())) {
+        await adjustAllocation(tx, reversal.budgetId, quarter, reversal.regionalCode, reversal.delta)
+      }
+
+      await tx.budgetRraLog.delete({ where: { id: params.id } })
+      return { id: log.id, year: log.year }
+    })
+
+    return NextResponse.json({ success: true, ...deleted })
+  } catch (error: any) {
+    console.error('Error deleting RRA:', error)
+    if (error?.code === 'P2021') {
+      return NextResponse.json({ error: 'Tabel RRA belum tersedia di database' }, { status: 400 })
+    }
+    if (error?.code === 'P2022') {
+      return NextResponse.json({ error: `Kolom database belum lengkap untuk RRA: ${error?.meta?.column || error?.message || 'unknown'}` }, { status: 400 })
+    }
+    const message = error?.message === 'Nilai RRA melebihi alokasi cost center donor'
+      ? 'RRA tidak dapat dibatalkan karena sebagian anggaran penerima sudah digunakan atau dialihkan'
+      : error?.message || 'Gagal membatalkan RRA'
+    return NextResponse.json({ error: message }, { status: 400 })
+  }
+}
