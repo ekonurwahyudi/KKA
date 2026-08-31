@@ -22,6 +22,7 @@ interface DataTableProps<TData, TValue> {
   data: TData[]
   searchKey?: string
   searchPlaceholder?: string
+  toolbarActions?: React.ReactNode
 }
 
 export function DataTable<TData, TValue>({
@@ -29,6 +30,7 @@ export function DataTable<TData, TValue>({
   data,
   searchKey,
   searchPlaceholder = 'Cari...',
+  toolbarActions,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -65,15 +67,20 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="space-y-4">
-      {searchKey && (
-        <Input
-          placeholder={searchPlaceholder}
-          value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ''}
-          onChange={(event) =>
-            table.getColumn(searchKey)?.setFilterValue(event.target.value)
-          }
-          className="max-w-sm"
-        />
+      {(searchKey || toolbarActions) && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          {searchKey ? (
+            <Input
+              placeholder={searchPlaceholder}
+              value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ''}
+              onChange={(event) =>
+                table.getColumn(searchKey)?.setFilterValue(event.target.value)
+              }
+              className="w-full sm:max-w-sm h-9"
+            />
+          ) : <div />}
+          {toolbarActions && <div className="flex items-center gap-2">{toolbarActions}</div>}
+        </div>
       )}
       <div className="rounded-md border overflow-x-auto">
         <Table className="min-w-[800px]">

@@ -4,10 +4,10 @@ import { budgetKeys } from './useBudget'
 
 export const rraKeys = {
   all: ['rra'] as const,
-  byYear: (year: number) => [...rraKeys.all, year] as const,
+  byYear: (year: number | 'all') => [...rraKeys.all, year] as const,
 }
 
-export const useRraLogs = (year: number) => {
+export const useRraLogs = (year: number | 'all') => {
   return useQuery({
     queryKey: rraKeys.byYear(year),
     queryFn: async () => {
@@ -23,7 +23,7 @@ export const useCreateRra = () => {
     mutationFn: async (data: Record<string, unknown>) => await api.post('/rra', data),
     onSuccess: (_, variables) => {
       const year = variables.year as number
-      queryClient.invalidateQueries({ queryKey: rraKeys.byYear(year) })
+      queryClient.invalidateQueries({ queryKey: rraKeys.all })
       queryClient.invalidateQueries({ queryKey: budgetKeys.byYear(year) })
       queryClient.invalidateQueries({ queryKey: budgetKeys.all })
     },
@@ -36,7 +36,7 @@ export const useUpdateRra = () => {
     mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => await api.put(`/rra/${id}`, data),
     onSuccess: (_, variables) => {
       const year = variables.data.year as number
-      queryClient.invalidateQueries({ queryKey: rraKeys.byYear(year) })
+      queryClient.invalidateQueries({ queryKey: rraKeys.all })
       queryClient.invalidateQueries({ queryKey: budgetKeys.byYear(year) })
       queryClient.invalidateQueries({ queryKey: budgetKeys.all })
     },

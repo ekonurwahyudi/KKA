@@ -152,9 +152,13 @@ async function adjustAllocation(tx: any, budgetId: string, quarter: number, regi
 }
 
 export async function GET(req: NextRequest) {
-  const year = parseInt(req.nextUrl.searchParams.get('year') || new Date().getFullYear().toString())
+  const yearParam = req.nextUrl.searchParams.get('year') || new Date().getFullYear().toString()
+  const year = yearParam === 'all' ? null : parseInt(yearParam)
+  if (year !== null && !Number.isInteger(year)) {
+    return NextResponse.json({ error: 'Tahun histori RRA tidak valid' }, { status: 400 })
+  }
   const logs = await (prisma as any).budgetRraLog.findMany({
-    where: { year },
+    where: year === null ? {} : { year },
     include: {
       sourceBudget: { include: { glAccount: true } },
       targetBudget: { include: { glAccount: true } },

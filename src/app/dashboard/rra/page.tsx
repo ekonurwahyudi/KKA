@@ -4,13 +4,14 @@ import { useMemo, useState } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { format } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
-import { ArrowRightLeft, CheckCircle, Download, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import { ArrowRightLeft, CheckCircle, Download, Filter, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { CurrencyInput } from '@/components/ui/currency-input'
 import { DataTable } from '@/components/ui/data-table'
 import { Label } from '@/components/ui/label'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
@@ -58,12 +59,15 @@ export default function RraPage() {
   const [targetLines, setTargetLines] = useState<RraInputLine[]>([newLine()])
   const [description, setDescription] = useState('')
   const [editingLogId, setEditingLogId] = useState<string | null>(null)
+  const [historyYear, setHistoryYear] = useState('all')
+  const [historyQuarter, setHistoryQuarter] = useState('all')
+  const [historyMonth, setHistoryMonth] = useState('all')
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState<'success' | 'error'>('success')
 
   const { data: budgets = [], isLoading: loadingBudgets } = useBudgets(year)
   const { data: regionals = [], isLoading: loadingRegionals } = useRegionals()
-  const { data: rraLogs = [], isLoading: loadingRra } = useRraLogs(year)
+  const { data: rraLogs = [], isLoading: loadingRra } = useRraLogs('all')
   const createRra = useCreateRra()
   const updateRra = useUpdateRra()
 
@@ -73,6 +77,18 @@ export default function RraPage() {
   const totalSource = sourceLines.reduce((sum, line) => sum + (line.amount || 0), 0)
   const totalTarget = targetLines.reduce((sum, line) => sum + (line.amount || 0), 0)
   const selisih = totalSource - totalTarget
+  const historyYears = useMemo(() => Array.from(new Set((rraLogs as RraLog[]).map(log => log.year))).sort((a, b) => b - a), [rraLogs])
+  const filteredRraLogs = useMemo(() => (rraLogs as RraLog[]).filter(log => {
+    if (historyYear !== 'all' && log.year !== Number(historyYear)) return false
+    if (historyQuarter !== 'all' && quarterFromMonth(log.month) !== Number(historyQuarter)) return false
+    if (historyMonth !== 'all' && log.month !== Number(historyMonth)) return false
+    return true
+  }), [rraLogs, historyYear, historyQuarter, historyMonth])
+  const historyMonthOptions = historyQuarter === 'all'
+    ? monthNames.map((name, index) => ({ name, month: index + 1 }))
+    : monthNames.slice((Number(historyQuarter) - 1) * 3, Number(historyQuarter) * 3)
+      .map((name, index) => ({ name, month: (Number(historyQuarter) - 1) * 3 + index + 1 }))
+  const activeHistoryFilterCount = [historyYear, historyQuarter, historyMonth].filter(value => value !== 'all').length
 
   const showMessage = (newType: 'success' | 'error', text: string) => {
     setMessageType(newType); setMessage(text); setTimeout(() => setMessage(''), 3500)
@@ -154,6 +170,7 @@ export default function RraPage() {
     const donors = historyInputLines(log, 'DONOR')
     const receivers = historyInputLines(log, 'PENERIMA')
     setEditingLogId(log.id)
+    setYear(log.year)
     setType(log.type)
     setMonth(String(log.month))
     setSourceLines(donors.length > 0 ? donors : [newLine()])
@@ -256,6 +273,7 @@ export default function RraPage() {
 
   const columns: ColumnDef<RraLog>[] = [
     { accessorKey: 'createdAt', header: 'Tanggal', cell: ({ row }) => format(new Date(row.original.createdAt), 'dd MMM yyyy HH:mm', { locale: idLocale }) },
+    { accessorKey: 'year', header: 'Tahun' },
     { accessorKey: 'type', header: 'Jenis', cell: ({ row }) => <Badge variant="secondary">{rraLabels[row.original.type] || row.original.type}</Badge> },
     { accessorKey: 'month', header: 'Bulan', cell: ({ row }) => monthNames[row.original.month - 1] || row.original.month },
     { id: 'donor', header: 'Donor', cell: ({ row }) => formatHistoryLines(row.original, 'DONOR') },
@@ -375,11 +393,73 @@ export default function RraPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base md:text-lg">Histori RRA Tahun {year}</CardTitle>
-          <CardDescription>Gunakan tombol Excel untuk mengunduh dokumen RRA seperti format PDRK-3</CardDescription>
+          <CardTitle className="text-base md:text-lg">Histori RRA</CardTitle>
+          <CardDescription>Histori lintas tahun. Gunakan filter periode atau tombol Excel untuk mengunduh dokumen RRA.</CardDescription>
         </CardHeader>
         <CardContent>
-          <DataTable columns={columns} data={rraLogs as RraLog[]} searchKey="type" searchPlaceholder="Cari jenis RRA..." />
+          <DataTable
+            columns={columns}
+            data={filteredRraLogs}
+            searchKey="type"
+            searchPlaceholder="Cari jenis RRA..."
+            toolbarActions={(
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2 h-9">
+                  <Filter className="h-4 w-4" />
+                  <span>Filter</span>
+                  {activeHistoryFilterCount > 0 && (
+                    <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                      {activeHistoryFilterCount}
+                    </Badge>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80" align="end">
+                <div className="space-y-4">
+                  <div className="font-medium text-sm">Filter Histori RRA</div>
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Tahun</Label>
+                      <Select value={historyYear} onValueChange={setHistoryYear}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="Semua Tahun" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Semua Tahun</SelectItem>
+                          {historyYears.map(historyItemYear => <SelectItem key={historyItemYear} value={String(historyItemYear)}>{historyItemYear}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Kuartal</Label>
+                      <Select value={historyQuarter} onValueChange={(value) => { setHistoryQuarter(value); setHistoryMonth('all') }}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="Semua Kuartal" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Semua Kuartal</SelectItem>
+                          {[1, 2, 3, 4].map(quarter => <SelectItem key={quarter} value={String(quarter)}>Q{quarter}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Bulan</Label>
+                      <Select value={historyMonth} onValueChange={setHistoryMonth}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="Semua Bulan" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Semua Bulan</SelectItem>
+                          {historyMonthOptions.map(item => <SelectItem key={item.month} value={String(item.month)}>{item.month} - {item.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {activeHistoryFilterCount > 0 && (
+                    <Button size="sm" className="w-full" onClick={() => { setHistoryYear('all'); setHistoryQuarter('all'); setHistoryMonth('all') }}>
+                      Reset Filter
+                    </Button>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+            )}
+          />
         </CardContent>
       </Card>
     </div>
